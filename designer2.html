@@ -408,26 +408,26 @@
     }
 
     // 传送带合法性检查 (增加ignoreBeltId参数，用于延长时忽略起点)
-    function isBeltPathValid(path, ignoreBeltIds = []) {
-        if (path.length < 2) return true;
+    function isBeltPathValid(beltpath, ignoreBeltIds = []) {
+        if (beltpath.length < 2) return true;
 
         // 相邻性检查
-        for (let i = 0; i < path.length - 1; i++) {
-            if (Math.abs(path[i].x - path[i + 1].x) + Math.abs(path[i].y - path[i + 1].y) !== 1) return false;
+        for (let i = 0; i < beltpath.length - 1; i++) {
+            if (Math.abs(beltpath[i].x - beltpath[i + 1].x) + Math.abs(beltpath[i].y - beltpath[i + 1].y) !== 1) return false;
         }
 
-        const isRing = path.length > 2 && path[0].x === path[path.length - 1].x && path[0].y === path[path.length - 1].y;
+        const isRing = beltpath.length > 2 && beltpath[0].x === beltpath[beltpath.length - 1].x && beltpath[0].y === beltpath[beltpath.length - 1].y;
         if (isRing) {
             // 环形路径中不能有机器（因为所有点都有前后继）
-            for (let i = 0; i < path.length; i++) {
-                if (getMachineAt(path[i].x, path[i].y)) return false;
+            for (let i = 0; i < beltpath.length; i++) {
+                if (getMachineAt(beltpath[i].x, beltpath[i].y)) return false;
             }
         }
 
         const seen = new Map(); // 坐标字符串 -> 第一次出现的索引
 
-        for (let i = 0; i < path.length; i++) {
-            const p = path[i];
+        for (let i = 0; i < beltpath.length; i++) {
+            const p = beltpath[i];
             const key = p.x + ',' + p.y;
 
             // 处理重复点
@@ -435,25 +435,25 @@
                 const j = seen.get(key);
 
                 // 环形路径的首尾相同视为合法，跳过后续重复检查
-                if (isRing && j === 0 && i === path.length - 1) {
+                if (isRing && j === 0 && i === beltpath.length - 1) {
                     continue;
                 }
 
                 // 普通重复：必须满足十字交叉条件
                 // 1. 两次出现的点都必须有前后继（即不能是端点）
-                if (j === 0 || j === path.length - 1) return false;
-                if (i === 0 || i === path.length - 1) return false;
+                if (j === 0 || j === beltpath.length - 1) return false;
+                if (i === 0 || i === beltpath.length - 1) return false;
 
                 // 2. 第一次经过时该点必须是直线通过（前后方向相同）
-                const prevJ = path[j - 1];
-                const nextJ = path[j + 1];
+                const prevJ = beltpath[j - 1];
+                const nextJ = beltpath[j + 1];
                 const dirPrevJ = getDirection(prevJ, p);
                 const dirNextJ = getDirection(p, nextJ);
                 if (dirPrevJ !== dirNextJ) return false;
 
                 // 3. 第二次经过时该点也必须是直线通过
-                const prevI = path[i - 1];
-                const nextI = path[i + 1];
+                const prevI = beltpath[i - 1];
+                const nextI = beltpath[i + 1];
                 const dirPrevI = getDirection(prevI, p);
                 const dirNextI = getDirection(p, nextI);
                 if (dirPrevI !== dirNextI) return false;
@@ -474,11 +474,11 @@
             // 机器占用检查
             if (getMachineAt(p.x, p.y)) {
                 // 机器只能出现在路径的端点
-                if (i !== 0 && i !== path.length - 1) return false;
+                if (i !== 0 && i !== beltpath.length - 1) return false;
                 // 如果是环形，前面已经排除机器，这里不会执行到
             } else {
                 // 检查与已有传送带的交叉
-                if (i === 0 || i === path.length - 1) {
+                if (i === 0 || i === beltpath.length - 1) {
                     // 端点允许连接指定的传送带（仅限一条）
                     if (grid[p.y][p.x].beltIds.length > 0) {
                         const ids = grid[p.y][p.x].beltIds;
@@ -487,8 +487,8 @@
                     }
                 } else {
                     // 中间格子
-                    const prev = path[i - 1];
-                    const next = path[i + 1];
+                    const prev = beltpath[i - 1];
+                    const next = beltpath[i + 1];
                     const dir1 = getDirection(prev, p);
                     const dir2 = getDirection(p, next);
                     const isTurn = (dir1 !== dir2);
@@ -504,11 +504,11 @@
         }
 
         // 起点机器方向检查（仅当起点不是环形中的特殊点时）
-        if (path.length >= 2) {
-            const start = path[0];
+        if (beltpath.length >= 2) {
+            const start = beltpath[0];
             const machine = getMachineAt(start.x, start.y);
             if (machine && isMachineOutputCell(machine, start.x, start.y)) {
-                const firstDir = getDirection(start, path[1]);
+                const firstDir = getDirection(start, beltpath[1]);
                 if (firstDir !== machine.direction) return false;
             }
         }
@@ -522,12 +522,14 @@
         const existingId = ids[0];
         const path = beltPaths.find(p => p.id === existingId);
         if (!path) return false;
+        const isRing = path.points[0].x === path.points[path.points.length-1].x && 
+                       path.points[0].y === path.points[path.points.length-1].y;
         const idx = path.points.findIndex(p => p.x === x && p.y === y);
         if (idx === -1) return false;
         const hasPrev = idx > 0;
         const hasNext = idx < path.points.length - 1;
-        if (!hasPrev || !hasNext) return false;
-        const prev = path.points[idx-1];
+        if ((!hasPrev || !hasNext) && !isRing) return false;
+        const prev = (isRing && idx==0) ? path.points[path.points.length-2] : path.points[idx-1];
         const next = path.points[idx+1];
         const dir1 = getDirection(prev, {x,y});
         const dir2 = getDirection({x,y}, next);
@@ -708,8 +710,11 @@
                 const pathId = ids[0];
                 const path = beltPaths.find(p => p.id === pathId);
                 if (path) {
+                    const isRing = path.points.length > 2 && 
+                                   path.points[0].x === path.points[path.points.length-1].x && 
+                                   path.points[0].y === path.points[path.points.length-1].y;
                     const idx = path.points.findIndex(p => p.x === ix && p.y === iy);
-                    if (idx === 0) {
+                    if (idx === 0 && !isRing) {
                         endExtendId = pathId;
                     }
                 }
@@ -771,6 +776,35 @@
         }
 
         ctx.restore();
+    }
+    function drawDebug(){
+        //绘制网格上所有点点beltId.length
+
+            ctx.fillStyle = '#000';
+            ctx.font = '10px Arial';
+            for(let y=0;y<GRID_SIZE;y++){
+                for(let x=0;x<GRID_SIZE;x++){
+                    const cell = grid[y][x];
+                    if(cell.beltIds.length>0){
+                        ctx.fillText(cell.beltIds.join(','), x*CELL_SIZE+2, y*CELL_SIZE+12);
+                    
+                    //绘制这些belt的起点和终点
+                    cell.beltIds.forEach(id=>{
+                        const path = beltPaths.find(p=>p.id===id);
+                        if(path){
+                            const start = path.points[0];
+                            const end = path.points[path.points.length-1];
+                            ctx.fillStyle = '#f00';
+                            ctx.fillRect(start.x*CELL_SIZE+5, start.y*CELL_SIZE+10, 5, 5);
+                            ctx.fillStyle = '#00f';
+                            ctx.fillRect(end.x*CELL_SIZE+10, end.y*CELL_SIZE+10, 5, 5);
+                        }
+                    });
+                    }
+                }
+            }
+
+        
     }
 
     // 供电桩范围等 (略，与之前相同)
@@ -998,6 +1032,7 @@
         drawBelts();
         machines.forEach(m => drawMachine(m));
         drawBeltPreview();
+        //drawDebug();
 
         // 放置模式预览
         if (placementActive && !dragState.dragging && !pickedUpMachine && preview.active) {
@@ -1249,8 +1284,11 @@
                             const pathId = ids[0];
                             const path = beltPaths.find(p => p.id === pathId);
                             if (path) {
+                                const isRing = path.points.length >= 2 && 
+                                path.points[0].x === path.points[path.points.length - 1].x && 
+                                path.points[0].y === path.points[path.points.length - 1].y;
                                 const idx = path.points.findIndex(p => p.x === ix && p.y === iy);
-                                if (idx === path.points.length - 1) {
+                                if (idx === path.points.length - 1 && !isRing) {
                                     // 是终点，允许作为起点向后延长
                                     beltStart = { x: ix, y: iy, type: 'beltEnd', dir: null };
                                     beltPath = [{ x: ix, y: iy }];
@@ -1287,8 +1325,11 @@
                     const pathId = ids[0];
                     const path = beltPaths.find(p => p.id === pathId);
                     if (path) {
+                        const isRing = path.points.length >= 2 && 
+                        path.points[0].x === path.points[path.points.length - 1].x && 
+                        path.points[0].y === path.points[path.points.length - 1].y;
                         const idx = path.points.findIndex(p => p.x === ix && p.y === iy);
-                        if (idx === 0) {
+                        if (idx === 0 && !isRing) {
                             // 是起点，允许作为终点向前延长
                             endExtendId = pathId;
                         }
