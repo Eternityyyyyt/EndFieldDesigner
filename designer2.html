@@ -1299,7 +1299,7 @@
                 // 环形起点必须是空格（无机器、无传送带）
                 if (grid[iy][ix].machineId === null && grid[iy][ix].beltIds.length === 0) {
                     // 构建闭环数组（首尾相同）
-                    const closedPath = beltPath.concat([{ x: ix, y: iy }]);
+                    const closedPath = beltPath;
                     // 检查整个闭环的合法性（忽略任何现有路径，因为这是新建）
                     if (isBeltPathValid(closedPath, [])) {
                         // 创建新传送带路径
