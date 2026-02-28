@@ -906,10 +906,10 @@
     function drawMachine(m) {
         const { x, y, w, h, name, direction } = m;
         let fillColor;
-        if (w === 2 && h === 2) fillColor = 'rgba(220, 180, 100, 0.7)';
-        else if (w === 3 && h === 3) fillColor = 'rgba(33, 43, 224, 0.7)'; 
-        else if (w === 5 && h === 5) fillColor = 'rgba(50, 180, 90, 0.7)'; 
-        else if ((w === 4 && h === 6) || (w === 6 && h === 4)) fillColor = 'rgba(110, 27, 151, 0.75)';
+        if (w === 2 && h === 2) fillColor = 'rgba(220, 180, 100, 0.4)';
+        else if (w === 3 && h === 3) fillColor = 'rgba(33, 42, 224, 0.4)'; 
+        else if (w === 5 && h === 5) fillColor = 'rgba(50, 180, 90, 0.4)'; 
+        else if ((w === 4 && h === 6) || (w === 6 && h === 4)) fillColor = 'rgba(110, 27, 151, 0.4)';
         else fillColor = 'rgba(200, 200, 210, 0.6)';
         ctx.fillStyle = fillColor;
         ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, w * CELL_SIZE, h * CELL_SIZE);
