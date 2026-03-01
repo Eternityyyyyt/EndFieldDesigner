@@ -1689,7 +1689,7 @@
                 extendingBeltId = null;
             } else {
                 // 空闲传送带模式：只删除光标下的传送带和分流器汇流器（如果有）
-                //优先删除汇流器
+                //优先删除分汇流器
                 const deviceHit = findBeltDeviceIndexAt(ix, iy);
                 if (deviceHit && (deviceHit.device.name === '分流器' || deviceHit.device.name === '汇流器')) {
                     beltDevices.splice(deviceHit.index, 1);
