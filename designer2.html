@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>终末地产线搭建工具</title>
+    <title>终末地产线</title>
     <style>
         /* ===== 清新浅色 · 现代化UI ===== */
         * {
@@ -11,7 +11,7 @@
             user-select: none;
         }
         body {
-            background: #f0f4f8;        /* 柔和浅灰背景 */
+            background: #f0f4f8;
             font-family: 'Segoe UI', 'Roboto', system-ui, sans-serif;
             margin: 0;
             padding: 0;
@@ -19,11 +19,11 @@
             display: flex;
             flex-direction: column;
             overflow: hidden;
-            color: #1a2b3c;             /* 深蓝灰文字，保证对比 */
+            color: #1a2b3c;
         }
         .fixed-header {
             flex-shrink: 0;
-            background: #ffffff;         /* 纯白面板 */
+            background: #ffffff;
             padding: 18px 24px 14px;
             box-shadow: 0 4px 12px rgba(0, 20, 30, 0.08);
             z-index: 20;
@@ -49,7 +49,7 @@
             justify-content: center;
         }
         .btn {
-            background: #ecf2f7;         /* 浅灰蓝按钮 */
+            background: #ecf2f7;
             border: 1px solid #cbd7e3;
             color: #1a3a4a;
             font-weight: 500;
@@ -100,6 +100,16 @@
             font-size: 0.9rem;
             padding: 6px 14px;
         }
+        .btn.splitter-btn {
+            background: #cfba4680;
+            border-color: #aac3d4;
+            color: #144a5e;
+        }
+        .btn.merger-btn {
+            background: #e3d9ed;
+            border-color: #c2b2d4;
+            color: #392b4a;
+        }
 
         .info-bar {
             background: #ffffff;
@@ -121,7 +131,7 @@
             gap: 8px;
         }
         .badge {
-            background: #d5e4f0;         /* 浅色徽章 */
+            background: #d5e4f0;
             color: #153e51;
             border-radius: 30px;
             padding: 4px 14px;
@@ -145,16 +155,16 @@
         .canvas-wrapper {
             display: inline-block;
             border-radius: 20px;
-            background: #d2dfe8;         /* 柔和包裹层 */
+            background: #d2dfe8;
             padding: 10px;
             box-shadow: 0 8px 20px rgba(0,20,30,0.15);
         }
         canvas {
             display: block;
-            width: 1350px;               /* 固定CSS尺寸，逻辑像素 */
+            width: 1350px;
             height: 1350px;
             border-radius: 12px;
-            background-color: #568296;    /* 中等亮度蓝绿底，比原来亮，机器仍清晰 */
+            background-color: #568296;
             box-shadow: 0 0 0 1px #8eb2c2, 0 8px 16px rgba(0,20,30,0.2);
             cursor: crosshair;
         }
@@ -166,7 +176,7 @@
             font-weight: 400;
         }
         .placement-indicator {
-            background: #72a5b9;          /* 柔和指示器 */
+            background: #72a5b9;
             color: white;
             border-radius: 30px;
             padding: 4px 22px;
@@ -210,7 +220,6 @@
             transform: translateY(2px);
             box-shadow: none;
         }
-
     </style>
 </head>
 <body>
@@ -222,6 +231,8 @@
             <button class="btn" id="btn5x5" title="5x5 机器">5x5</button>
             <button class="btn" id="btn4x6" title="4x6 机器">4x6</button>
             <button class="btn" id="beltBtn" title="传送带模式 (E键切换)">传送带(E)</button>
+            <button class="btn splitter-btn" id="splitterBtn" title="分流器">分流器</button>
+            <button class="btn merger-btn" id="mergerBtn" title="汇流器">汇流器</button>
         </div>
         <div class="btn-group">
             <button class="btn rotate-btn" id="rotateBtn" title="旋转当前尺寸 (或按R)">旋转(R)</button>
@@ -248,30 +259,26 @@
     <div class="canvas-wrapper">
         <canvas id="gridCanvas" width="1350" height="1350"></canvas>
     </div>
-    <footer>左键起点/终点 · 移动鼠标绘制路径 · 绿色合法/红色非法 · 支持十字交叉</footer>
 </div>
 
 <script>
 (function() {
-    // ---------- 高DPI适配：解决模糊问题 ----------
+    // ---------- 高DPI适配 ----------
     const canvas = document.getElementById('gridCanvas');
     const ctx = canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
-    // 设置物理像素尺寸
     const logicalWidth = 1350, logicalHeight = 1350;
     canvas.width = logicalWidth * dpr;
     canvas.height = logicalHeight * dpr;
-    // 保持CSS尺寸为逻辑像素
     canvas.style.width = logicalWidth + 'px';
     canvas.style.height = logicalHeight + 'px';
-    // 缩放上下文，使绘图命令仍使用逻辑坐标
     ctx.scale(dpr, dpr);
 
     // ---------- 常量 ----------
     const GRID_SIZE = 45;
     const CELL_SIZE = 30;          // 逻辑像素
 
-    // 机器定义
+    // 机器定义 (原有)
     const machineTypes = {
         '2x2': ['供电桩', '热能池'],
         '3x3': ['精炼炉', '粉碎机', '协议储存箱', '配件机', '塑形机'],
@@ -279,24 +286,30 @@
         '4x6': ['装备原件机', '灌装机', '研磨机', '封装机', '拆解机']
     };
 
-    // 当前选中的机器
+    // 当前选中的机器 / 设备
     let curW = 2, curH = 2;
     let curName = '供电桩';
-    let curDirection = 0;
+    let curDirection = 0;  // 0:右,1:下,2:左,3:上
 
-    // 网格二维数组
+    // 网格: 增加 beltDeviceId 字段
     let grid = Array(GRID_SIZE).fill().map(() => 
-        Array(GRID_SIZE).fill().map(() => ({ machineId: null, beltIds: [] }))
+        Array(GRID_SIZE).fill().map(() => ({ machineId: null, beltIds: [], beltDeviceId: null }))
     );
 
+    // 普通机器
     let machines = [];
     let nextMachineId = 0;
+    // 传送带路径
     let beltPaths = [];
     let nextBeltId = 0;
+    // ===== 新增: 分流器/汇流器独立存储 =====
+    let beltDevices = [];          // 每个元素: { id, x, y, name, direction, w:1, h:1 }
+    let nextBeltDeviceId = 0;
 
     let placementActive = false;
     let preview = { active: false, gridX: 0, gridY: 0 };
 
+    // 拖拽相关 (普通机器)
     let dragState = {
         dragging: false,
         originalMachine: null,
@@ -306,7 +319,11 @@
         currentGridY: 0
     };
     let potentialDrag = null;
-    let pickedUpMachine = null;
+    let pickedUpMachine = null;          // 普通机器拾起
+
+    // 新增: 拾起的分流器/汇流器
+    let pickedUpBeltDevice = null;       // { device, offsetX, offsetY, gridX, gridY }
+
     let zPressed = false;
 
     let beltMode = false;
@@ -320,6 +337,8 @@
     const btn5x5 = document.getElementById('btn5x5');
     const btn4x6 = document.getElementById('btn4x6');
     const beltBtn = document.getElementById('beltBtn');
+    const splitterBtn = document.getElementById('splitterBtn');
+    const mergerBtn = document.getElementById('mergerBtn');
     const rotateBtn = document.getElementById('rotateBtn');
     const clearBtn = document.getElementById('clearBtn');
     const currentMachineSpan = document.getElementById('currentMachineLabel');
@@ -333,14 +352,43 @@
     const menu5x5 = document.getElementById('menu5x5');
     const menu4x6 = document.getElementById('menu4x6');
 
-    // ---------- 网格重建等函数 (与原来完全相同，略作缩进) ----------
+    // 辅助函数：判断是否为分流器/汇流器
+    function isSplitterOrMerger(name) {
+        return name === '分流器' || name === '汇流器';
+    }
+    // 判断从设备出发的方向是否为输出方向
+    function isBeltDeviceOutputDir(device, dir) {
+        if (device.name === '分流器') {
+            // 分流器：除 direction 外的三个方向都是输出
+            return dir !== device.direction;
+        } else { // 汇流器
+            // 汇流器：只有 direction 是输出
+            return dir === device.direction;
+        }
+    }
+
+    // 判断进入设备的方向是否为输入方向
+    function isBeltDeviceInputDir(device, dir) {
+        if (device.name === '分流器') {
+            // 分流器：只有 direction 是输入
+            return dir === device.direction;
+        } else { // 汇流器
+            // 汇流器：除 direction 外的三个方向都是输入
+            return dir !== device.direction;
+        }
+    }
+
+    // ---------- 网格重建 ----------
     function rebuildGrid() {
+        // 重置
         for (let y = 0; y < GRID_SIZE; y++) {
             for (let x = 0; x < GRID_SIZE; x++) {
                 grid[y][x].machineId = null;
                 grid[y][x].beltIds = [];
+                grid[y][x].beltDeviceId = null;
             }
         }
+        // 普通机器
         machines.forEach(m => {
             for (let dy = 0; dy < m.h; dy++) {
                 for (let dx = 0; dx < m.w; dx++) {
@@ -351,6 +399,7 @@
                 }
             }
         });
+        // 传送带
         beltPaths.forEach(path => {
             path.points.forEach(p => {
                 if (p.x >= 0 && p.x < GRID_SIZE && p.y >= 0 && p.y < GRID_SIZE) {
@@ -359,14 +408,11 @@
                     }
                 }
             });
-            if (path.points[0].x === path.points[path.points.length-1].x && 
-                path.points[0].y === path.points[path.points.length-1].y) {
-                const p = path.points[0];
-                if (p.x >= 0 && p.x < GRID_SIZE && p.y >= 0 && p.y < GRID_SIZE) {
-                    if (grid[p.y][p.x].machineId === null) {
-                        grid[p.y][p.x].beltIds.pop();
-                    }
-                }
+        });
+        // 分流器/汇流器
+        beltDevices.forEach(d => {
+            if (d.x >=0 && d.x<GRID_SIZE && d.y>=0 && d.y<GRID_SIZE) {
+                grid[d.y][d.x].beltDeviceId = d.id;
             }
         });
     }
@@ -400,45 +446,61 @@
         return machines.find(m => m.id === mid) || null;
     }
 
-    function isAreaFree(x, y, w, h, excludeMachineId = null, newMachineDir = null) {
+    function getBeltDeviceAt(x, y) {
+        const did = (x>=0 && x<GRID_SIZE && y>=0 && y<GRID_SIZE) ? grid[y][x].beltDeviceId : null;
+        return beltDevices.find(d => d.id === did) || null;
+    }
+
+    // 检查区域可用性 (增加 excludeBeltDeviceId 参数)
+    function isAreaFree(x, y, w, h, excludeMachineId = null, newMachineDir = null, excludeBeltDeviceId = null) {
         for (let dy = 0; dy < h; dy++) {
             for (let dx = 0; dx < w; dx++) {
                 const nx = x + dx, ny = y + dy;
                 if (nx < 0 || nx >= GRID_SIZE || ny < 0 || ny >= GRID_SIZE) return false;
                 const cell = grid[ny][nx];
+                // 机器占用检查
                 if (cell.machineId !== null && cell.machineId !== excludeMachineId) return false;
-                if (cell.beltIds.length > 0) {
-                    if (newMachineDir === null) return false;
-                    const isInput = (newMachineDir === 0 && dx === 0) ||
-                                    (newMachineDir === 1 && dy === 0) ||
-                                    (newMachineDir === 2 && dx === w-1) ||
-                                    (newMachineDir === 3 && dy === h-1);
-                    const isOutput = (newMachineDir === 0 && dx === w-1) ||
-                                     (newMachineDir === 1 && dy === h-1) ||
-                                     (newMachineDir === 2 && dx === 0) ||
-                                     (newMachineDir === 3 && dy === 0);
-                    if (!isInput && !isOutput) return false;
-                    for (let bid of cell.beltIds) {
-                        const path = beltPaths.find(p => p.id === bid);
-                        if (!path) continue;
-                        const points = path.points;
-                        const isStart = (points[0].x === nx && points[0].y === ny);
-                        const isEnd = (points[points.length-1].x === nx && points[points.length-1].y === ny);
-                        if (!isStart && !isEnd) return false;
-                        if (isInput) {
-                            if (!isEnd) return false;
-                            if (points.length >= 2) {
-                                const prev = points[points.length-2];
-                                const dir = getDirection(prev, {x: nx, y: ny});
-                                if (dir !== newMachineDir) return false;
-                            } else return false;
-                        } else if (isOutput) {
-                            if (!isStart) return false;
-                            if (points.length >= 2) {
-                                const next = points[1];
-                                const dir = getDirection({x: nx, y: ny}, next);
-                                if (dir !== newMachineDir) return false;
-                            } else return false;
+                // 分流器/汇流器占用检查
+                if (cell.beltDeviceId !== null && cell.beltDeviceId !== excludeBeltDeviceId) return false;
+
+                // 如果当前放置的是分流器或汇流器 (尺寸1x1)
+                if (isSplitterOrMerger(curName) && w === 1 && h === 1) {
+                    //if (cell.beltIds.length === 0) return false;
+                } else {
+                    // 普通机器：不允许有传送带 (除非是输入输出端，保留原逻辑)
+                    if (cell.beltIds.length > 0) {
+                        if (newMachineDir === null) return false;
+                        const isInput = (newMachineDir === 0 && dx === 0) ||
+                                        (newMachineDir === 1 && dy === 0) ||
+                                        (newMachineDir === 2 && dx === w-1) ||
+                                        (newMachineDir === 3 && dy === h-1);
+                        const isOutput = (newMachineDir === 0 && dx === w-1) ||
+                                        (newMachineDir === 1 && dy === h-1) ||
+                                        (newMachineDir === 2 && dx === 0) ||
+                                        (newMachineDir === 3 && dy === 0);
+                        if (!isInput && !isOutput) return false;
+                        for (let bid of cell.beltIds) {
+                            const path = beltPaths.find(p => p.id === bid);
+                            if (!path) continue;
+                            const points = path.points;
+                            const isStart = (points[0].x === nx && points[0].y === ny);
+                            const isEnd = (points[points.length-1].x === nx && points[points.length-1].y === ny);
+                            if (!isStart && !isEnd) return false;
+                            if (isInput) {
+                                if (!isEnd) return false;
+                                if (points.length >= 2) {
+                                    const prev = points[points.length-2];
+                                    const dir = getDirection(prev, {x: nx, y: ny});
+                                    if (dir !== newMachineDir) return false;
+                                } else return false;
+                            } else if (isOutput) {
+                                if (!isStart) return false;
+                                if (points.length >= 2) {
+                                    const next = points[1];
+                                    const dir = getDirection({x: nx, y: ny}, next);
+                                    if (dir !== newMachineDir) return false;
+                                } else return false;
+                            }
                         }
                     }
                 }
@@ -447,21 +509,31 @@
         return true;
     }
 
+    // 传送带有效性检查 (适配 beltDevice)
     function isBeltPathValid(beltpath, ignoreBeltIds = []) {
         if (beltpath.length < 2) return true;
         for (let i = 0; i < beltpath.length - 1; i++) {
-            if (Math.abs(beltpath[i].x - beltpath[i + 1].x) + Math.abs(beltpath[i].y - beltpath[i + 1].y) !== 1) return false;
+            if (Math.abs(beltpath[i].x - beltpath[i+1].x) + Math.abs(beltpath[i].y - beltpath[i+1].y) !== 1) return false;
         }
-        const isRing = beltpath.length > 2 && beltpath[0].x === beltpath[beltpath.length - 1].x && beltpath[0].y === beltpath[beltpath.length - 1].y;
+        const isRing = beltpath.length > 2 && beltpath[0].x === beltpath[beltpath.length-1].x && beltpath[0].y === beltpath[beltpath.length-1].y;
         if (isRing) {
             for (let i = 0; i < beltpath.length; i++) {
-                if (getMachineAt(beltpath[i].x, beltpath[i].y)) return false;
+                const m = getMachineAt(beltpath[i].x, beltpath[i].y);
+                if (m && !isSplitterOrMerger(m.name)) return false; // 普通机器不允许
+                const d = getBeltDeviceAt(beltpath[i].x, beltpath[i].y);
+                if (d) continue; // 允许分流汇流在环上
             }
         }
         const seen = new Map();
         for (let i = 0; i < beltpath.length; i++) {
             const p = beltpath[i];
             const key = p.x + ',' + p.y;
+            const machineHere = getMachineAt(p.x, p.y);
+            const deviceHere = getBeltDeviceAt(p.x, p.y);
+            // 允许分流器/汇流器在任何位置
+            if (machineHere && !isSplitterOrMerger(machineHere.name)) {
+                if (i !== 0 && i !== beltpath.length - 1) return false;
+            }
             if (seen.has(key)) {
                 const j = seen.get(key);
                 if (isRing && j === 0 && i === beltpath.length - 1) continue;
@@ -484,9 +556,8 @@
             } else {
                 seen.set(key, i);
             }
-            if (getMachineAt(p.x, p.y)) {
-                if (i !== 0 && i !== beltpath.length - 1) return false;
-            } else {
+            // 对非机器格子检查交叉
+            if (!machineHere && !deviceHere) {
                 if (i === 0 || i === beltpath.length - 1) {
                     if (grid[p.y][p.x].beltIds.length > 0) {
                         const ids = grid[p.y][p.x].beltIds;
@@ -510,9 +581,26 @@
         if (beltpath.length >= 2) {
             const start = beltpath[0];
             const machine = getMachineAt(start.x, start.y);
-            if (machine && isMachineOutputCell(machine, start.x, start.y)) {
+            const device = getBeltDeviceAt(start.x, start.y);
+            if (machine && !isSplitterOrMerger(machine.name) && isMachineOutputCell(machine, start.x, start.y)) {
                 const firstDir = getDirection(start, beltpath[1]);
                 if (firstDir !== machine.direction) return false;
+            }
+            // 新增：起点是 beltDevice 时，检查第一个方向是否为输出方向
+            if (device) {
+                const firstDir = getDirection(start, beltpath[1]);
+                if (!isBeltDeviceOutputDir(device, firstDir)) return false;
+            }
+        }
+
+        // 终点检查（在函数末尾也可添加，但终点检查已经在前面循环中隐含了？最好显式检查）
+        // 在循环结束后，检查最后一个点是否为 beltDevice 且方向合法
+        if (beltpath.length >= 2) {
+            const end = beltpath[beltpath.length - 1];
+            const device = getBeltDeviceAt(end.x, end.y);
+            if (device) {
+                const lastDir = getDirection(beltpath[beltpath.length - 2], end);
+                if (!isBeltDeviceInputDir(device, (lastDir+2)%4)) return false;
             }
         }
         return true;
@@ -546,8 +634,12 @@
     function isPotentialEndValid(endX, endY) {
         if (endX < 0 || endX >= GRID_SIZE || endY < 0 || endY >= GRID_SIZE) return false;
         const machine = getMachineAt(endX, endY);
+        const device = getBeltDeviceAt(endX, endY);
         if (machine) {
-            if (!isMachineInputCell(machine, endX, endY)) return false;
+            if (!isSplitterOrMerger(machine.name) && !isMachineInputCell(machine, endX, endY)) return false;
+        } else if (device) {
+            // 允许 beltDevice 作为终点，具体方向会在 isBeltPathValid 中检查
+            return true;
         } else {
             if (grid[endY][endX].machineId !== null) return false;
             if (grid[endY][endX].beltIds.length > 0) return false;
@@ -555,7 +647,7 @@
         return true;
     }
 
-    // ---------- 绘制函数 (保持原样，使用逻辑坐标) ----------
+    // ---------- 绘制函数 ----------
     function drawBelts() {
         beltPaths.forEach(path => {
             const pts = path.points;
@@ -581,6 +673,7 @@
             ctx.restore();
         });
 
+        // 绘制传送带箭头
         ctx.fillStyle = '#ffffff';
         ctx.shadowColor = '#000';
         ctx.shadowBlur = 4;
@@ -588,6 +681,9 @@
             for (let x = 0; x < GRID_SIZE; x++) {
                 const ids = grid[y][x].beltIds;
                 if (ids.length === 0) continue;
+                const device = getBeltDeviceAt(x, y);
+                if (device) continue; // 由设备自己绘制箭头
+
                 if (ids.length >= 2) {
                     const cx = x * CELL_SIZE + CELL_SIZE / 2;
                     const cy = y * CELL_SIZE + CELL_SIZE / 2;
@@ -610,8 +706,7 @@
                 const idx = pts.findIndex(p => p.x === x && p.y === y);
                 if (idx === -1) continue;
                 const isClosed = pts[0].x === pts[pts.length-1].x && pts[0].y === pts[pts.length-1].y;
-                const totalPoints = pts.length;
-                const effectiveLength = isClosed ? totalPoints - 1 : totalPoints;
+                const effectiveLength = isClosed ? pts.length - 1 : pts.length;
                 let hasPrev, hasNext;
                 let prevPoint = null, nextPoint = null;
                 if (isClosed) {
@@ -659,149 +754,99 @@
         ctx.shadowBlur = 0;
     }
 
-    function drawBeltPreview() {
-        if (!beltMode || beltPath.length === 0) return;
-        const lastPoint = beltPath[beltPath.length - 1];
-        const ix = lastPoint.x, iy = lastPoint.y;
-        const machine = getMachineAt(ix, iy);
-        if (machine && !isMachineInputCell(machine, ix, iy)) return;
-        if (!machine && grid[iy][ix].machineId !== null) return;
-        let endExtendId = null;
-        if (!machine && grid[iy][ix].beltIds.length > 0) {
-            const ids = grid[iy][ix].beltIds;
-            if (ids.length === 1) {
-                const pathId = ids[0];
-                const path = beltPaths.find(p => p.id === pathId);
-                if (path) {
-                    const isRing = path.points.length > 2 && 
-                                   path.points[0].x === path.points[path.points.length-1].x && 
-                                   path.points[0].y === path.points[path.points.length-1].y;
-                    const idx = path.points.findIndex(p => p.x === ix && p.y === iy);
-                    if (idx === 0 && !isRing) endExtendId = pathId;
-                }
-            }
-        }
-        const ignoreIds = [extendingBeltId, endExtendId].filter(id => id !== null);
-        const baseValid = isBeltPathValid(beltPath, ignoreIds);
+    // 绘制分流器/汇流器 (单独)
+    function drawBeltDevice(device) {
+        const { x, y, name, direction } = device;
+        const cx = x * CELL_SIZE + CELL_SIZE/2;
+        const cy = y * CELL_SIZE + CELL_SIZE/2;
+        const size = CELL_SIZE * 0.6;
+        const arrowOffset = CELL_SIZE * 0.2;
+
         ctx.save();
-        ctx.lineJoin = 'round';
-        ctx.lineCap = 'butt';
-        if (beltPath.length >= 2) {
-            ctx.beginPath();
-            ctx.moveTo(beltPath[0].x * CELL_SIZE + CELL_SIZE/2, beltPath[0].y * CELL_SIZE + CELL_SIZE/2);
-            for (let i = 1; i < beltPath.length; i++) {
-                ctx.lineTo(beltPath[i].x * CELL_SIZE + CELL_SIZE/2, beltPath[i].y * CELL_SIZE + CELL_SIZE/2);
-            }
-            ctx.strokeStyle = baseValid ? 'rgba(0, 255, 0, 0.4)' : 'rgba(255, 0, 0, 0.4)';
-            ctx.lineWidth = CELL_SIZE - 4;
-            ctx.stroke();
-            ctx.strokeStyle = baseValid ? '#00ff00' : '#ff0000';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-        }
-        if (preview.active) {
-            const mx = preview.gridX, my = preview.gridY;
-            if ((lastPoint.x !== mx || lastPoint.y !== my) && 
-                Math.abs(lastPoint.x - mx) + Math.abs(lastPoint.y - my) === 1) {
-                const endValid = isPotentialEndValid(mx, my);
-                let dirMatch = true;
-                const machineAtEnd = getMachineAt(mx, my);
-                if (machineAtEnd && isMachineInputCell(machineAtEnd, mx, my)) {
-                    const lastDir = getDirection(lastPoint, { x: mx, y: my });
-                    if (lastDir !== machineAtEnd.direction) dirMatch = false;
-                }
-                const finalValid = baseValid && endValid && dirMatch;
-                ctx.beginPath();
-                ctx.moveTo(lastPoint.x * CELL_SIZE + CELL_SIZE/2, lastPoint.y * CELL_SIZE + CELL_SIZE/2);
-                ctx.lineTo(mx * CELL_SIZE + CELL_SIZE/2, my * CELL_SIZE + CELL_SIZE/2);
-                ctx.strokeStyle = finalValid ? 'rgba(0, 255, 0, 0.6)' : 'rgba(255, 0, 0, 0.6)';
-                ctx.lineWidth = CELL_SIZE - 4;
-                ctx.stroke();
-                ctx.strokeStyle = finalValid ? '#00ff00' : '#ff0000';
-                ctx.lineWidth = 2;
-                ctx.stroke();
-            }
-        }
-        ctx.restore();
-    }
-
-    function drawPowerRange(x, y) {
-        ctx.save();
-        ctx.strokeStyle = '#ffff00';
-        ctx.lineWidth = 3;
-        ctx.setLineDash([8, 8]);
-        ctx.strokeRect((x - 5) * CELL_SIZE, (y - 5) * CELL_SIZE, 12 * CELL_SIZE, 12 * CELL_SIZE);
-        ctx.restore();
-    }
-
-    function isMachinePowered(machine) {
-        if (machine.name === '供电桩') return true;
-        const powerPoles = machines.filter(m => m.name === '供电桩');
-        if (powerPoles.length === 0) return false;
-        for (let dx = 0; dx < machine.w; dx++) {
-            for (let dy = 0; dy < machine.h; dy++) {
-                const cellX = machine.x + dx, cellY = machine.y + dy;
-                for (const pole of powerPoles) {
-                    const poleRangeX1 = pole.x - 5, poleRangeY1 = pole.y - 5;
-                    const poleRangeX2 = pole.x + 2 + 4, poleRangeY2 = pole.y + 2 + 4;
-                    if (cellX >= poleRangeX1 && cellX <= poleRangeX2 && cellY >= poleRangeY1 && cellY <= poleRangeY2) return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    function getActivePowerPole() {
-        if (placementActive && curName === '供电桩') {
-            return { x: preview.gridX, y: preview.gridY, w: curW, h: curH };
-        }
-        if (dragState.dragging && dragState.originalMachine?.name === '供电桩') {
-            return { x: dragState.currentGridX, y: dragState.currentGridY, w: dragState.originalMachine.w, h: dragState.originalMachine.h };
-        }
-        if (pickedUpMachine?.machine.name === '供电桩') {
-            return { x: pickedUpMachine.gridX, y: pickedUpMachine.gridY, w: pickedUpMachine.machine.w, h: pickedUpMachine.machine.h };
-        }
-        return null;
-    }
-
-    function isMachineCoveredByActivePole(machine) {
-        const activePole = getActivePowerPole();
-        if (!activePole || machine.name === '供电桩') return false;
-        const poleRangeX1 = activePole.x - 5, poleRangeY1 = activePole.y - 5;
-        const poleRangeX2 = activePole.x + 2 + 4, poleRangeY2 = activePole.y + 2 + 4;
-        for (let dx = 0; dx < machine.w; dx++) {
-            for (let dy = 0; dy < machine.h; dy++) {
-                const cellX = machine.x + dx, cellY = machine.y + dy;
-                if (cellX >= poleRangeX1 && cellX <= poleRangeX2 && cellY >= poleRangeY1 && cellY <= poleRangeY2) return true;
-            }
-        }
-        return false;
-    }
-
-    function drawArrow(cx, cy, dir, size) {
-        ctx.fillStyle = '#ffffff';
         ctx.shadowColor = '#000';
-        ctx.shadowBlur = 4;
+        ctx.shadowBlur = 6;
+
+        // 背景形状
+        ctx.fillStyle = name === '分流器' ? '#f0b300' : '#b87cf7';
         ctx.beginPath();
-        if (dir === 'right') {
-            ctx.moveTo(cx - size/2, cy - size/3);
+        if (name === '分流器') {
+            ctx.arc(cx, cy, size/2, 0, 2*Math.PI);
+        } else {
+            ctx.moveTo(cx, cy - size/2);
             ctx.lineTo(cx + size/2, cy);
-            ctx.lineTo(cx - size/2, cy + size/3);
-        } else if (dir === 'down') {
-            ctx.moveTo(cx - size/3, cy - size/2);
             ctx.lineTo(cx, cy + size/2);
-            ctx.lineTo(cx + size/3, cy - size/2);
-        } else if (dir === 'left') {
-            ctx.moveTo(cx + size/2, cy - size/3);
             ctx.lineTo(cx - size/2, cy);
-            ctx.lineTo(cx + size/2, cy + size/3);
-        } else if (dir === 'up') {
-            ctx.moveTo(cx - size/3, cy + size/2);
-            ctx.lineTo(cx, cy - size/2);
-            ctx.lineTo(cx + size/3, cy + size/2);
+            ctx.closePath();
         }
-        ctx.closePath();
         ctx.fill();
+
+        // 四个方向的箭头
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowBlur = 8;
+        ctx.translate(cx, cy);
+
+        for (let dir = 0; dir < 4; dir++) {
+            let isInput;
+            if (name === '分流器') {
+                isInput = (dir === direction);      // 分流器：direction是输入方向
+            } else {
+                isInput = (dir !== direction);      // 汇流器：其他三个方向是输入
+            }
+
+            ctx.save();
+            ctx.rotate(dir * Math.PI / 2);
+            if (!isInput) {
+                ctx.translate(arrowOffset + size*0.5, 0);
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(-size*0.4, -size*0.2);
+                ctx.lineTo(-size*0.4, size*0.2);
+                ctx.closePath();
+                ctx.fill();
+            } else {
+                ctx.translate(arrowOffset, 0);
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(size*0.4, -size*0.2);
+                ctx.lineTo(size*0.4, size*0.2);
+                ctx.closePath();
+                ctx.fill();
+            }
+            ctx.restore();
+        }
+        //绘制文字：分流器S，汇流器M，居中，白色，小一些
+        //ctx.fillStyle = '#ffffff';
+        //ctx.font = `bold ${size*0.5}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+        //ctx.textAlign = 'center';
+        //ctx.textBaseline = 'middle';
+        //ctx.fillText(name === '分流器' ? 'S' : 'M', 0, 0);
+        //ctx.restore(); // 恢复整体状态
+    }
+
+    // 绘制普通机器 (略作精简，原样)
+    function drawMachine(m) {
+        const { x, y, w, h, name, direction } = m;
+        let fillColor;
+        if (w === 2 && h === 2) fillColor = 'rgba(220, 180, 100, 0.4)';
+        else if (w === 3 && h === 3) fillColor = 'rgba(33, 42, 224, 0.4)'; 
+        else if (w === 5 && h === 5) fillColor = 'rgba(50, 180, 90, 0.4)'; 
+        else if ((w === 4 && h === 6) || (w === 6 && h === 4)) fillColor = 'rgba(110, 27, 151, 0.4)';
+        else fillColor = 'rgba(200, 200, 210, 0.4)';
+        ctx.fillStyle = fillColor;
+        ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, w * CELL_SIZE, h * CELL_SIZE);
+        const isPowered = isMachinePowered(m);
+        ctx.strokeStyle = isPowered ? '#00ff00' : '#ff0000';
+        ctx.lineWidth = 2.5;
+        ctx.strokeRect(x * CELL_SIZE, y * CELL_SIZE, w * CELL_SIZE, h * CELL_SIZE);
+        if (isMachineCoveredByActivePole(m)) {
+            ctx.save();
+            ctx.fillStyle = 'rgba(255, 255, 0, 0.2)';
+            ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, w * CELL_SIZE, h * CELL_SIZE);
+            ctx.restore();
+        }
+
+        // 普通机器内容（箭头/文字）
+        drawMachineContent(x, y, w, h, name, direction);
     }
 
     function drawMachineContent(x, y, w, h, name, direction) {
@@ -819,6 +864,7 @@
         ctx.shadowColor = 'transparent';
         ctx.textAlign = 'left';
 
+        // 简单箭头（仅示意，原逻辑保留）
         if (w === 2 && h === 2 && name === '热能池') {
             ctx.shadowColor = '#000';
             ctx.shadowBlur = 4;
@@ -903,33 +949,155 @@
         ctx.shadowBlur = 0;
     }
 
-    function drawMachine(m) {
-        const { x, y, w, h, name, direction } = m;
-        let fillColor;
-        if (w === 2 && h === 2) fillColor = 'rgba(220, 180, 100, 0.4)';
-        else if (w === 3 && h === 3) fillColor = 'rgba(33, 42, 224, 0.4)'; 
-        else if (w === 5 && h === 5) fillColor = 'rgba(50, 180, 90, 0.4)'; 
-        else if ((w === 4 && h === 6) || (w === 6 && h === 4)) fillColor = 'rgba(110, 27, 151, 0.4)';
-        else fillColor = 'rgba(200, 200, 210, 0.4)';
-        ctx.fillStyle = fillColor;
-        ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, w * CELL_SIZE, h * CELL_SIZE);
-        const isPowered = isMachinePowered(m);
-        ctx.strokeStyle = isPowered ? '#00ff00' : '#ff0000';
-        ctx.lineWidth = 2.5;
-        ctx.strokeRect(x * CELL_SIZE, y * CELL_SIZE, w * CELL_SIZE, h * CELL_SIZE);
-        if (isMachineCoveredByActivePole(m)) {
-            ctx.save();
-            ctx.fillStyle = 'rgba(255, 255, 0, 0.2)';
-            ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, w * CELL_SIZE, h * CELL_SIZE);
-            ctx.restore();
+    function drawArrow(cx, cy, dir, size) {
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowColor = '#000';
+        ctx.shadowBlur = 4;
+        ctx.beginPath();
+        if (dir === 'right') {
+            ctx.moveTo(cx - size/2, cy - size/3);
+            ctx.lineTo(cx + size/2, cy);
+            ctx.lineTo(cx - size/2, cy + size/3);
+        } else if (dir === 'down') {
+            ctx.moveTo(cx - size/3, cy - size/2);
+            ctx.lineTo(cx, cy + size/2);
+            ctx.lineTo(cx + size/3, cy - size/2);
+        } else if (dir === 'left') {
+            ctx.moveTo(cx + size/2, cy - size/3);
+            ctx.lineTo(cx - size/2, cy);
+            ctx.lineTo(cx + size/2, cy + size/3);
+        } else if (dir === 'up') {
+            ctx.moveTo(cx - size/3, cy + size/2);
+            ctx.lineTo(cx, cy - size/2);
+            ctx.lineTo(cx + size/3, cy + size/2);
         }
-        drawMachineContent(x, y, w, h, name, direction);
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    function isMachinePowered(machine) {
+        if (machine.name === '供电桩') return true;
+        const powerPoles = machines.filter(m => m.name === '供电桩');
+        if (powerPoles.length === 0) return false;
+        for (let dx = 0; dx < machine.w; dx++) {
+            for (let dy = 0; dy < machine.h; dy++) {
+                const cellX = machine.x + dx, cellY = machine.y + dy;
+                for (const pole of powerPoles) {
+                    const poleRangeX1 = pole.x - 5, poleRangeY1 = pole.y - 5;
+                    const poleRangeX2 = pole.x + 2 + 4, poleRangeY2 = pole.y + 2 + 4;
+                    if (cellX >= poleRangeX1 && cellX <= poleRangeX2 && cellY >= poleRangeY1 && cellY <= poleRangeY2) return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    function getActivePowerPole() {
+        if (placementActive && curName === '供电桩') {
+            return { x: preview.gridX, y: preview.gridY, w: curW, h: curH };
+        }
+        if (dragState.dragging && dragState.originalMachine?.name === '供电桩') {
+            return { x: dragState.currentGridX, y: dragState.currentGridY, w: dragState.originalMachine.w, h: dragState.originalMachine.h };
+        }
+        if (pickedUpMachine?.machine.name === '供电桩') {
+            return { x: pickedUpMachine.gridX, y: pickedUpMachine.gridY, w: pickedUpMachine.machine.w, h: pickedUpMachine.machine.h };
+        }
+        return null;
+    }
+
+    function isMachineCoveredByActivePole(machine) {
+        const activePole = getActivePowerPole();
+        if (!activePole || machine.name === '供电桩') return false;
+        const poleRangeX1 = activePole.x - 5, poleRangeY1 = activePole.y - 5;
+        const poleRangeX2 = activePole.x + 2 + 4, poleRangeY2 = activePole.y + 2 + 4;
+        for (let dx = 0; dx < machine.w; dx++) {
+            for (let dy = 0; dy < machine.h; dy++) {
+                const cellX = machine.x + dx, cellY = machine.y + dy;
+                if (cellX >= poleRangeX1 && cellX <= poleRangeX2 && cellY >= poleRangeY1 && cellY <= poleRangeY2) return true;
+            }
+        }
+        return false;
+    }
+
+    function drawPowerRange(x, y) {
+        ctx.save();
+        ctx.strokeStyle = '#ffff00';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([8, 8]);
+        ctx.strokeRect((x - 5) * CELL_SIZE, (y - 5) * CELL_SIZE, 12 * CELL_SIZE, 12 * CELL_SIZE);
+        ctx.restore();
+    }
+
+    function drawBeltPreview() {
+        if (!beltMode || beltPath.length === 0) return;
+        const lastPoint = beltPath[beltPath.length - 1];
+        const ix = lastPoint.x, iy = lastPoint.y;
+        const machine = getMachineAt(ix, iy);
+        if (machine && !isMachineInputCell(machine, ix, iy)) return;
+        if (!machine && grid[iy][ix].machineId !== null) return;
+        let endExtendId = null;
+        if (!machine && grid[iy][ix].beltIds.length > 0) {
+            const ids = grid[iy][ix].beltIds;
+            if (ids.length === 1) {
+                const pathId = ids[0];
+                const path = beltPaths.find(p => p.id === pathId);
+                if (path) {
+                    const isRing = path.points.length > 2 && 
+                                   path.points[0].x === path.points[path.points.length-1].x && 
+                                   path.points[0].y === path.points[path.points.length-1].y;
+                    const idx = path.points.findIndex(p => p.x === ix && p.y === iy);
+                    if (idx === 0 && !isRing) endExtendId = pathId;
+                }
+            }
+        }
+        const ignoreIds = [extendingBeltId, endExtendId].filter(id => id !== null);
+        const baseValid = isBeltPathValid(beltPath, ignoreIds);
+        ctx.save();
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'butt';
+        if (beltPath.length >= 2) {
+            ctx.beginPath();
+            ctx.moveTo(beltPath[0].x * CELL_SIZE + CELL_SIZE/2, beltPath[0].y * CELL_SIZE + CELL_SIZE/2);
+            for (let i = 1; i < beltPath.length; i++) {
+                ctx.lineTo(beltPath[i].x * CELL_SIZE + CELL_SIZE/2, beltPath[i].y * CELL_SIZE + CELL_SIZE/2);
+            }
+            ctx.strokeStyle = baseValid ? 'rgba(0, 255, 0, 0.4)' : 'rgba(255, 0, 0, 0.4)';
+            ctx.lineWidth = CELL_SIZE - 4;
+            ctx.stroke();
+            ctx.strokeStyle = baseValid ? '#00ff00' : '#ff0000';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+        if (preview.active) {
+            const mx = preview.gridX, my = preview.gridY;
+            if ((lastPoint.x !== mx || lastPoint.y !== my) && 
+                Math.abs(lastPoint.x - mx) + Math.abs(lastPoint.y - my) === 1) {
+                const endValid = isPotentialEndValid(mx, my);
+                let dirMatch = true;
+                const machineAtEnd = getMachineAt(mx, my);
+                if (machineAtEnd && isMachineInputCell(machineAtEnd, mx, my)) {
+                    const lastDir = getDirection(lastPoint, { x: mx, y: my });
+                    if (lastDir !== machineAtEnd.direction) dirMatch = false;
+                }
+                const finalValid = baseValid && endValid && dirMatch;
+                ctx.beginPath();
+                ctx.moveTo(lastPoint.x * CELL_SIZE + CELL_SIZE/2, lastPoint.y * CELL_SIZE + CELL_SIZE/2);
+                ctx.lineTo(mx * CELL_SIZE + CELL_SIZE/2, my * CELL_SIZE + CELL_SIZE/2);
+                ctx.strokeStyle = finalValid ? 'rgba(0, 255, 0, 0.6)' : 'rgba(255, 0, 0, 0.6)';
+                ctx.lineWidth = CELL_SIZE - 4;
+                ctx.stroke();
+                ctx.strokeStyle = finalValid ? '#00ff00' : '#ff0000';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+        }
+        ctx.restore();
     }
 
     function draw() {
-        ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr); // 逻辑尺寸清除
+        ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
 
-        // 网格 (逻辑坐标)
+        // 网格
         for (let i = 0; i <= GRID_SIZE; i++) {
             ctx.beginPath();
             ctx.strokeStyle = (i % 5 === 0) ? '#d4f0ff' : '#5f99aa';
@@ -940,25 +1108,44 @@
         }
 
         drawBelts();
+        // 绘制普通机器
         machines.forEach(m => drawMachine(m));
+        // 绘制分流器/汇流器
+        beltDevices.forEach(d => drawBeltDevice(d));
         drawBeltPreview();
 
-        if (placementActive && !dragState.dragging && !pickedUpMachine && preview.active) {
-            const px = preview.gridX, py = preview.gridY;
-            const isValid = isAreaFree(px, py, curW, curH, null, curDirection);
-            ctx.fillStyle = isValid ? 'rgba(0, 255, 100, 0.3)' : 'rgba(255, 40, 40, 0.4)';
-            ctx.fillRect(px * CELL_SIZE, py * CELL_SIZE, curW * CELL_SIZE, curH * CELL_SIZE);
-            ctx.strokeStyle = isValid ? '#b5ffb5' : '#ffb5b5';
-            ctx.lineWidth = 4;
-            ctx.strokeRect(px * CELL_SIZE, py * CELL_SIZE, curW * CELL_SIZE, curH * CELL_SIZE);
-            drawMachineContent(px, py, curW, curH, curName, curDirection);
-            if (curName === '供电桩') drawPowerRange(px, py);
+        // 放置预览 (普通机器)
+        if (placementActive && !dragState.dragging && !pickedUpMachine && !pickedUpBeltDevice && preview.active) {
+            if (!isSplitterOrMerger(curName)) {
+                const px = preview.gridX, py = preview.gridY;
+                const isValid = isAreaFree(px, py, curW, curH, null, curDirection, null);
+                ctx.fillStyle = isValid ? 'rgba(0, 255, 100, 0.3)' : 'rgba(255, 40, 40, 0.4)';
+                ctx.fillRect(px * CELL_SIZE, py * CELL_SIZE, curW * CELL_SIZE, curH * CELL_SIZE);
+                ctx.strokeStyle = isValid ? '#b5ffb5' : '#ffb5b5';
+                ctx.lineWidth = 4;
+                ctx.strokeRect(px * CELL_SIZE, py * CELL_SIZE, curW * CELL_SIZE, curH * CELL_SIZE);
+                drawMachineContent(px, py, curW, curH, curName, curDirection);
+                if (curName === '供电桩') drawPowerRange(px, py);
+            } else {
+                // 分流器/汇流器预览 (1x1)
+                const px = preview.gridX, py = preview.gridY;
+                const isValid = isAreaFree(px, py, 1, 1, null, curDirection, null);
+                ctx.fillStyle = isValid ? 'rgba(0, 255, 100, 0.3)' : 'rgba(255, 40, 40, 0.4)';
+                ctx.fillRect(px * CELL_SIZE, py * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+                ctx.strokeStyle = isValid ? '#b5ffb5' : '#ffb5b5';
+                ctx.lineWidth = 4;
+                ctx.strokeRect(px * CELL_SIZE, py * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+                // 临时绘制设备样式
+                const tempDev = { x: px, y: py, name: curName, direction: curDirection };
+                drawBeltDevice(tempDev);
+            }
         }
 
+        // 拾起的普通机器
         if (pickedUpMachine) {
             const { machine, gridX, gridY } = pickedUpMachine;
             const { w, h, name, direction, id } = machine;
-            const isValid = isAreaFree(gridX, gridY, w, h, id, direction);
+            const isValid = isAreaFree(gridX, gridY, w, h, id, direction, null);
             ctx.fillStyle = isValid ? 'rgba(0, 200, 255, 0.4)' : 'rgba(255, 80, 80, 0.5)';
             ctx.fillRect(gridX * CELL_SIZE, gridY * CELL_SIZE, w * CELL_SIZE, h * CELL_SIZE);
             ctx.strokeStyle = isValid ? '#00ccff' : '#ff6666';
@@ -968,10 +1155,24 @@
             if (name === '供电桩') drawPowerRange(gridX, gridY);
         }
 
+        // 拾起的beltDevice
+        if (pickedUpBeltDevice) {
+            const { device, gridX, gridY } = pickedUpBeltDevice;
+            const isValid = isAreaFree(gridX, gridY, 1, 1, null, device.direction, device.id);
+            ctx.fillStyle = isValid ? 'rgba(0, 200, 255, 0.4)' : 'rgba(255, 80, 80, 0.5)';
+            ctx.fillRect(gridX * CELL_SIZE, gridY * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+            ctx.strokeStyle = isValid ? '#00ccff' : '#ff6666';
+            ctx.lineWidth = 4;
+            ctx.strokeRect(gridX * CELL_SIZE, gridY * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+            const tempDev = { x: gridX, y: gridY, name: device.name, direction: device.direction };
+            drawBeltDevice(tempDev);
+        }
+
+        // 拖拽普通机器
         if (dragState.dragging && dragState.originalMachine) {
             const { originalMachine, currentGridX, currentGridY } = dragState;
             const { w, h, name, direction, id } = originalMachine;
-            const isValid = isAreaFree(currentGridX, currentGridY, w, h, id, direction);
+            const isValid = isAreaFree(currentGridX, currentGridY, w, h, id, direction, null);
             ctx.fillStyle = isValid ? 'rgba(0, 200, 255, 0.4)' : 'rgba(255, 80, 80, 0.5)';
             ctx.fillRect(currentGridX * CELL_SIZE, currentGridY * CELL_SIZE, w * CELL_SIZE, h * CELL_SIZE);
             ctx.strokeStyle = isValid ? '#00ccff' : '#ff6666';
@@ -988,10 +1189,8 @@
     // ---------- 事件处理 ----------
     function getGridFromEvent(e) {
         const rect = canvas.getBoundingClientRect();
-        // 直接使用client坐标除以CELL_SIZE，因为逻辑坐标与CSS像素1:1
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
-        // 边界保护
         const ix = Math.min(GRID_SIZE-1, Math.max(0, Math.floor(x / CELL_SIZE)));
         const iy = Math.min(GRID_SIZE-1, Math.max(0, Math.floor(y / CELL_SIZE)));
         return { ix, iy };
@@ -1002,6 +1201,13 @@
         if (mid === null) return null;
         const idx = machines.findIndex(m => m.id === mid);
         return idx !== -1 ? { machine: machines[idx], index: idx } : null;
+    }
+
+    function findBeltDeviceIndexAt(ix, iy) {
+        const did = (ix>=0 && ix<GRID_SIZE && iy>=0 && iy<GRID_SIZE) ? grid[iy][ix].beltDeviceId : null;
+        if (did === null) return null;
+        const idx = beltDevices.findIndex(d => d.id === did);
+        return idx !== -1 ? { device: beltDevices[idx], index: idx } : null;
     }
 
     function deactivatePlacement() {
@@ -1020,6 +1226,7 @@
             dragState.dragging = false;
             potentialDrag = null;
             pickedUpMachine = null;
+            pickedUpBeltDevice = null;
         }
         updateUI();
         draw();
@@ -1027,17 +1234,12 @@
 
     function updateUI() {
         currentMachineSpan.textContent = curName ? `${curName} (${curW}x${curH})` : '未选择';
-        machineCountSpan.textContent = machines.length;
+        machineCountSpan.textContent = machines.length;  // 不统计beltDevices
         beltLengthSpan.textContent = beltPath.length;
 
         if (beltMode) {
-            if (beltStart) {
-                placementIndicator.innerHTML = '绘制传送带';
-                placementIndicator.style.background = '#4a7a9c';
-            } else {
-                placementIndicator.innerHTML = '传送带模式';
-                placementIndicator.style.background = '#3e6f8a';
-            }
+            placementIndicator.innerHTML = '传送带模式';
+            placementIndicator.style.background = '#3e6f8a';
         } else if (placementActive) {
             placementIndicator.innerHTML = '放置模式';
             placementIndicator.style.background = '#3e9f5a';
@@ -1095,6 +1297,24 @@
     btn5x5.addEventListener('click', (e) => { e.stopPropagation(); showMenu(menu5x5, btn5x5); });
     btn4x6.addEventListener('click', (e) => { e.stopPropagation(); showMenu(menu4x6, btn4x6); });
     beltBtn.addEventListener('click', toggleBeltMode);
+    splitterBtn.addEventListener('click', () => {
+        curW = 1; curH = 1; curName = '分流器'; curDirection = 0;
+        placementActive = true;
+        beltMode = false;
+        beltStart = null; beltPath = []; extendingBeltId = null;
+        hideAllMenus();
+        updateUI();
+        draw();
+    });
+    mergerBtn.addEventListener('click', () => {
+        curW = 1; curH = 1; curName = '汇流器'; curDirection = 0;
+        placementActive = true;
+        beltMode = false;
+        beltStart = null; beltPath = []; extendingBeltId = null;
+        hideAllMenus();
+        updateUI();
+        draw();
+    });
     document.addEventListener('click', (e) => {
         if (!e.target.closest('.machine-menu') && !e.target.closest('.btn-group')) hideAllMenus();
     });
@@ -1151,6 +1371,11 @@
             pickedUpMachine.gridY = iy - pickedUpMachine.offsetY;
         }
 
+        if (pickedUpBeltDevice) {
+            pickedUpBeltDevice.gridX = ix - pickedUpBeltDevice.offsetX;
+            pickedUpBeltDevice.gridY = iy - pickedUpBeltDevice.offsetY;
+        }
+
         draw();
     });
 
@@ -1172,16 +1397,23 @@
         const { ix, iy } = getGridFromEvent(e);
 
         if (beltMode) {
+            // ... 原传送带逻辑不变 ...
             e.preventDefault();
             if (!beltStart) {
                 const machine = getMachineAt(ix, iy);
+                const device = getBeltDeviceAt(ix, iy);
                 if (machine) {
                     if (isMachineOutputCell(machine, ix, iy)) {
                         beltStart = { x: ix, y: iy, type: 'machineOutput', dir: machine.direction };
                         beltPath = [{ x: ix, y: iy }];
                         extendingBeltId = null;
                     }
-                } else {
+                } else if (device) {
+                    // 允许 beltDevice 作为起点，但需要后续方向匹配，这里先允许
+                    beltStart = { x: ix, y: iy, type: 'beltDevice', device: device };
+                    beltPath = [{ x: ix, y: iy }];
+                    extendingBeltId = null;
+                }else {
                     if (grid[iy][ix].beltIds.length > 0) {
                         const ids = grid[iy][ix].beltIds;
                         if (ids.length === 1) {
@@ -1201,7 +1433,7 @@
                         }
                     } else {
                         if (ix >= 0 && iy >= 0 && ix < GRID_SIZE && iy < GRID_SIZE &&
-                            grid[iy][ix].machineId === null && grid[iy][ix].beltIds.length === 0) {
+                            grid[iy][ix].machineId === null && grid[iy][ix].beltDeviceId === null && grid[iy][ix].beltIds.length === 0) {
                             beltStart = { x: ix, y: iy, type: 'empty', dir: null };
                             beltPath = [{ x: ix, y: iy }];
                             extendingBeltId = null;
@@ -1212,7 +1444,7 @@
                 draw();
                 return;
             }
-
+            // ... 其余传送带处理保持不变 ...
             const machine = getMachineAt(ix, iy);
             if (machine && !isMachineInputCell(machine, ix, iy)) return;
             if (!machine && grid[iy][ix].machineId !== null) return;
@@ -1233,7 +1465,7 @@
                 }
             }
             if (beltPath.length >= 2 && ix === beltPath[0].x && iy === beltPath[0].y) {
-                if (grid[iy][ix].machineId === null && grid[iy][ix].beltIds.length === 0) {
+                if (grid[iy][ix].machineId === null && grid[iy][ix].beltDeviceId === null && grid[iy][ix].beltIds.length === 0) {
                     const closedPath = beltPath;
                     if (isBeltPathValid(closedPath, [])) {
                         beltPaths.push({ id: nextBeltId++, points: closedPath });
@@ -1260,9 +1492,15 @@
             const ignoreIds = [extendingBeltId, endExtendId].filter(id => id !== null);
             const fullValid = isBeltPathValid(beltPath, ignoreIds);
             let dirMatch = true;
-            if (machine && beltPath.length >= 2) {
+            if (beltPath.length >= 2) {
                 const lastDir = getDirection(beltPath[beltPath.length - 2], beltPath[beltPath.length - 1]);
-                if (lastDir !== machine.direction) dirMatch = false;
+                const machine = getMachineAt(ix, iy);
+                const device = getBeltDeviceAt(ix, iy);
+                if (machine && !isSplitterOrMerger(machine.name)) {
+                    if (!isMachineInputCell(machine, ix, iy) || lastDir !== machine.direction) dirMatch = false;
+                } else if (device) {
+                    if (!isBeltDeviceInputDir(device, (lastDir+2)%4)) dirMatch = false;
+                }
             }
 
             if (fullValid && dirMatch && beltPath.length >= 2) {
@@ -1301,7 +1539,23 @@
             return;
         }
 
-        if (pickedUpMachine) { e.preventDefault(); return; }
+        if (pickedUpMachine || pickedUpBeltDevice) { e.preventDefault(); return; }
+
+        // 优先检查是否点中beltDevice
+        const deviceHit = findBeltDeviceIndexAt(ix, iy);
+        if (deviceHit) {
+            e.preventDefault();
+            // 启动beltDevice拖拽 (简易: 直接拾起)
+            const device = { ...deviceHit.device };
+            beltDevices.splice(deviceHit.index, 1);
+            rebuildGrid();
+            if (placementActive) deactivatePlacement();
+            dragState.dragging = false; potentialDrag = null;
+            const offsetX = ix - device.x, offsetY = iy - device.y;
+            pickedUpBeltDevice = { device, offsetX, offsetY, gridX: device.x, gridY: device.y };
+            updateUI(); draw();
+            return;
+        }
 
         const hit = findMachineIndexAt(ix, iy);
         if (hit) {
@@ -1318,18 +1572,37 @@
 
         if (placementActive) {
             e.preventDefault();
-            if (isAreaFree(ix, iy, curW, curH, null, curDirection)) {
-                const newMachine = {
-                    id: nextMachineId++,
-                    x: ix, y: iy, w: curW, h: curH,
-                    name: curName, direction: curDirection
-                };
-                machines.push(newMachine);
-                rebuildGrid();
-                updateUI();
-                if (!zPressed) deactivatePlacement();
-                draw();
-            } else draw();
+            if (isSplitterOrMerger(curName)) {
+                // 放置分流器/汇流器
+                if (isAreaFree(ix, iy, 1, 1, null, curDirection, null)) {
+                    const newDevice = {
+                        id: nextBeltDeviceId++,
+                        x: ix, y: iy,
+                        w: 1, h: 1,
+                        name: curName,
+                        direction: curDirection
+                    };
+                    beltDevices.push(newDevice);
+                    rebuildGrid();
+                    updateUI();
+                    if (!zPressed) deactivatePlacement();
+                    draw();
+                } else draw();
+            } else {
+                // 放置普通机器
+                if (isAreaFree(ix, iy, curW, curH, null, curDirection, null)) {
+                    const newMachine = {
+                        id: nextMachineId++,
+                        x: ix, y: iy, w: curW, h: curH,
+                        name: curName, direction: curDirection
+                    };
+                    machines.push(newMachine);
+                    rebuildGrid();
+                    updateUI();
+                    if (!zPressed) deactivatePlacement();
+                    draw();
+                } else draw();
+            }
         }
     });
 
@@ -1337,7 +1610,7 @@
         if (e.button !== 0) return;
         if (pickedUpMachine) {
             const { machine, gridX, gridY } = pickedUpMachine;
-            if (isAreaFree(gridX, gridY, machine.w, machine.h, machine.id, machine.direction)) {
+            if (isAreaFree(gridX, gridY, machine.w, machine.h, machine.id, machine.direction, null)) {
                 machine.x = gridX; machine.y = gridY;
                 machines.push(machine);
                 rebuildGrid();
@@ -1346,10 +1619,21 @@
             } else { draw(); }
             return;
         }
+        if (pickedUpBeltDevice) {
+            const { device, gridX, gridY } = pickedUpBeltDevice;
+            if (isAreaFree(gridX, gridY, 1, 1, null, device.direction, device.id)) {
+                device.x = gridX; device.y = gridY;
+                beltDevices.push(device);
+                rebuildGrid();
+                pickedUpBeltDevice = null;
+                updateUI(); draw();
+            } else { draw(); }
+            return;
+        }
         if (potentialDrag) { potentialDrag = null; }
         if (dragState.dragging && dragState.originalMachine) {
             const { originalMachine, currentGridX, currentGridY } = dragState;
-            if (isAreaFree(currentGridX, currentGridY, originalMachine.w, originalMachine.h, originalMachine.id, originalMachine.direction)) {
+            if (isAreaFree(currentGridX, currentGridY, originalMachine.w, originalMachine.h, originalMachine.id, originalMachine.direction, null)) {
                 originalMachine.x = currentGridX; originalMachine.y = currentGridY;
                 machines.push(originalMachine);
             } else {
@@ -1366,6 +1650,19 @@
         if(beltMode){return;}
         e.preventDefault();
         const { ix, iy } = getGridFromEvent(e);
+        // 优先beltDevice
+        const deviceHit = findBeltDeviceIndexAt(ix, iy);
+        if (deviceHit) {
+            const device = { ...deviceHit.device };
+            beltDevices.splice(deviceHit.index, 1);
+            rebuildGrid();
+            if (placementActive) deactivatePlacement();
+            dragState.dragging = false; potentialDrag = null;
+            const offsetX = ix - device.x, offsetY = iy - device.y;
+            pickedUpBeltDevice = { device, offsetX, offsetY, gridX: device.x, gridY: device.y };
+            updateUI(); draw();
+            return;
+        }
         const hit = findMachineIndexAt(ix, iy);
         if (hit) {
             const machine = { ...hit.machine };
@@ -1382,33 +1679,75 @@
     canvas.addEventListener('contextmenu', (e) => {
         e.preventDefault();
         const { ix, iy } = getGridFromEvent(e);
-        const hit = findMachineIndexAt(ix, iy);
-        if (hit) {
-            machines.splice(hit.index, 1);
-            rebuildGrid();
-        } else if (grid[iy][ix].beltIds.length > 0) {
-            const ids = grid[iy][ix].beltIds;
-            if (ids.length > 0) {
-                const id = ids[0];
-                const index = beltPaths.findIndex(p => p.id === id);
-                if (index !== -1) beltPaths.splice(index, 1);
-                rebuildGrid();
+
+        // 传送带模式下的特殊处理
+        if (beltMode) {
+            if (beltStart !== null) {
+                // 正在放置新传送带：右键取消本次放置，不清除传送带模式
+                beltStart = null;
+                beltPath = [];
+                extendingBeltId = null;
+            } else {
+                // 空闲传送带模式：只删除光标下的传送带（如果有）
+                if (grid[iy][ix].beltIds.length > 0) {
+                    const id = grid[iy][ix].beltIds[0];
+                    const index = beltPaths.findIndex(p => p.id === id);
+                    if (index !== -1) {
+                        beltPaths.splice(index, 1);
+                        rebuildGrid();
+                    }
+                }
+                // 如果光标下没有传送带，什么也不做（保持传送带模式激活）
             }
         } else {
-            if (beltMode) { beltMode = false; beltStart = null; beltPath = []; extendingBeltId = null; }
-            else if (placementActive) deactivatePlacement();
-            if (pickedUpMachine) pickedUpMachine = null;
+            // 非传送带模式：原有逻辑（删除机器/分流汇流器/传送带）
+            const deviceHit = findBeltDeviceIndexAt(ix, iy);
+            if (deviceHit) {
+                beltDevices.splice(deviceHit.index, 1);
+                rebuildGrid();
+            } else {
+                const hit = findMachineIndexAt(ix, iy);
+                if (hit) {
+                    machines.splice(hit.index, 1);
+                    rebuildGrid();
+                } else if (grid[iy][ix].beltIds.length > 0) {
+                    const ids = grid[iy][ix].beltIds;
+                    if (ids.length > 0) {
+                        const id = ids[0];
+                        const index = beltPaths.findIndex(p => p.id === id);
+                        if (index !== -1) {
+                            beltPaths.splice(index, 1);
+                            rebuildGrid();
+                        }
+                    }
+                } else {
+                    if (placementActive) deactivatePlacement();
+                    if (pickedUpMachine) pickedUpMachine = null;
+                    if (pickedUpBeltDevice) pickedUpBeltDevice = null;
+                }
+            }
         }
+
+        // 清理拖拽状态
         if (potentialDrag) potentialDrag = null;
-        if (dragState.dragging) { dragState.dragging = false; dragState.originalMachine = null; }
-        updateUI(); draw();
+        if (dragState.dragging) {
+            dragState.dragging = false;
+            dragState.originalMachine = null;
+        }
+
+        updateUI();
+        draw();
     });
 
     window.addEventListener('keydown', (e) => {
         if (e.key === 'z' || e.key === 'Z') { zPressed = true; e.preventDefault(); }
         if (e.key === 'r' || e.key === 'R') {
             e.preventDefault();
-            if (pickedUpMachine) {
+            if (pickedUpBeltDevice) {
+                const d = pickedUpBeltDevice.device;
+                d.direction = (d.direction + 1) % 4;
+                draw();
+            } else if (pickedUpMachine) {
                 const m = pickedUpMachine.machine;
                 m.direction = (m.direction + 1) % 4;
                 [m.w, m.h] = [m.h, m.w];
@@ -1443,7 +1782,11 @@
     });
 
     rotateBtn.addEventListener('click', () => {
-        if (pickedUpMachine) {
+        if (pickedUpBeltDevice) {
+            const d = pickedUpBeltDevice.device;
+            d.direction = (d.direction + 1) % 4;
+            draw();
+        } else if (pickedUpMachine) {
             const m = pickedUpMachine.machine;
             m.direction = (m.direction + 1) % 4;
             [m.w, m.h] = [m.h, m.w];
@@ -1474,10 +1817,11 @@
     clearBtn.addEventListener('click', () => {
         machines = [];
         beltPaths = [];
-        nextMachineId = 0; nextBeltId = 0;
+        beltDevices = [];
+        nextMachineId = 0; nextBeltId = 0; nextBeltDeviceId = 0;
         rebuildGrid();
         if (placementActive) deactivatePlacement();
-        dragState.dragging = false; potentialDrag = null; pickedUpMachine = null;
+        dragState.dragging = false; potentialDrag = null; pickedUpMachine = null; pickedUpBeltDevice = null;
         beltMode = false; beltStart = null; beltPath = [];
         extendingBeltId = null;
         updateUI(); draw();
