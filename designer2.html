@@ -336,6 +336,25 @@
     let pipeDevices = [];          // 管道分流器/汇流器
     let nextPipeDeviceId = 0;
 
+    // 多选与批量移动
+    let multiSelectMode = false;
+    let multiSelectRect = { active: false, startX: 0, startY: 0, endX: 0, endY: 0 };
+    let multiMouseDown = { isDown: false, gridX: 0, gridY: 0 };
+    let multiSelecting = false;
+    let selectedMachineIds = new Set();
+    let selectedBeltDeviceIds = new Set();
+    let selectedPipeDeviceIds = new Set();
+    // 仅对选中的传送带/水管格点记录 pathId -> Set<index>
+    let selectedBeltPointIndicesByPath = new Map();
+    let selectedPipePointIndicesByPath = new Map();
+    let multiMoveState = {
+        moving: false,
+        minX: 0, maxX: -1, minY: 0, maxY: -1,
+        anchorX: 0, anchorY: 0,
+        deltaX: 0, deltaY: 0
+    };
+    let multiSelectionSnapshot = null; // { machines, beltDevices, pipeDevices, beltSegments, pipeSegments }
+
     let placementActive = false;
     let preview = { active: false, gridX: 0, gridY: 0 };
 
@@ -1851,6 +1870,73 @@
             if (name === '供电桩') drawPowerRange(currentGridX, currentGridY);
         }
 
+        // 多选模式下，对已经选中的元素做高亮（仅在未进入移动阶段时）
+        if (multiSelectMode && !multiMoveState.moving) {
+            ctx.save();
+            // 选中的机器
+            machines.forEach(m => {
+                if (!selectedMachineIds.has(m.id)) return;
+                // 使用淡色填充代替与供电框重合的虚线描边
+                ctx.fillStyle = 'rgba(0, 255, 255, 0.18)';
+                ctx.fillRect(m.x * CELL_SIZE, m.y * CELL_SIZE, m.w * CELL_SIZE, m.h * CELL_SIZE);
+            });
+            // 选中的分流/汇流器
+            beltDevices.forEach(d => {
+                if (!selectedBeltDeviceIds.has(d.id)) return;
+                ctx.strokeStyle = '#00ffff';
+                ctx.lineWidth = 3;
+                ctx.setLineDash([6, 4]);
+                ctx.strokeRect(d.x * CELL_SIZE, d.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+            });
+            pipeDevices.forEach(d => {
+                if (!selectedPipeDeviceIds.has(d.id)) return;
+                ctx.strokeStyle = '#00ffff';
+                ctx.lineWidth = 3;
+                ctx.setLineDash([6, 4]);
+                ctx.strokeRect(d.x * CELL_SIZE, d.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+            });
+            // 选中的传送带/水管格点，只画一个淡色背景
+            selectedBeltPointIndicesByPath.forEach((set, pathId) => {
+                const path = beltPaths.find(p => p.id === pathId);
+                if (!path) return;
+                set.forEach(idx => {
+                    const p = path.points[idx];
+                    ctx.fillStyle = 'rgba(0, 255, 255, 0.25)';
+                    ctx.fillRect(p.x * CELL_SIZE, p.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+                });
+            });
+            selectedPipePointIndicesByPath.forEach((set, pathId) => {
+                const path = pipePaths.find(p => p.id === pathId);
+                if (!path) return;
+                set.forEach(idx => {
+                    const p = path.points[idx];
+                    ctx.fillStyle = 'rgba(135, 206, 235, 0.25)';
+                    ctx.fillRect(p.x * CELL_SIZE, p.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+                });
+            });
+            // 框选矩形
+            if (multiSelectRect.active) {
+                const x1 = Math.min(multiSelectRect.startX, multiSelectRect.endX);
+                const y1 = Math.min(multiSelectRect.startY, multiSelectRect.endY);
+                const x2 = Math.max(multiSelectRect.startX, multiSelectRect.endX);
+                const y2 = Math.max(multiSelectRect.startY, multiSelectRect.endY);
+                const rx = x1 * CELL_SIZE;
+                const ry = y1 * CELL_SIZE;
+                const rw = (x2 - x1 + 1) * CELL_SIZE;
+                const rh = (y2 - y1 + 1) * CELL_SIZE;
+                ctx.strokeStyle = '#8b5cf6';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([4, 4]);
+                ctx.strokeRect(rx, ry, rw, rh);
+            }
+            ctx.restore();
+        }
+
+        // 多选移动预览（在普通高亮之后）
+        if (multiSelectMode && multiMoveState.moving && multiSelectionSnapshot) {
+            drawMultiSelectionPreview();
+        }
+
         if (preview.active) mouseCoordSpan.textContent = `${preview.gridX} , ${preview.gridY}`;
         else mouseCoordSpan.textContent = '— , —';
     }
@@ -1923,10 +2009,530 @@
         return idx !== -1 ? { device: beltDevices[idx], index: idx } : null;
     }
 
+    // --------- 多选相关辅助 ---------
+    function clearMultiSelection() {
+        selectedMachineIds.clear();
+        selectedBeltDeviceIds.clear();
+        selectedPipeDeviceIds.clear();
+        selectedBeltPointIndicesByPath.clear();
+        selectedPipePointIndicesByPath.clear();
+    }
+
+    function applySelectionRect() {
+        if (!multiSelectRect.active) return;
+        clearMultiSelection();
+        const x1 = Math.max(0, Math.min(multiSelectRect.startX, multiSelectRect.endX));
+        const y1 = Math.max(0, Math.min(multiSelectRect.startY, multiSelectRect.endY));
+        const x2 = Math.min(GRID_SIZE - 1, Math.max(multiSelectRect.startX, multiSelectRect.endX));
+        const y2 = Math.min(GRID_SIZE - 1, Math.max(multiSelectRect.startY, multiSelectRect.endY));
+
+        // 机器：只要有任意一格落在矩形内就认为被选中
+        machines.forEach(m => {
+            const mx1 = m.x;
+            const my1 = m.y;
+            const mx2 = m.x + m.w - 1;
+            const my2 = m.y + m.h - 1;
+            if (mx2 >= x1 && mx1 <= x2 && my2 >= y1 && my1 <= y2) {
+                selectedMachineIds.add(m.id);
+            }
+        });
+
+        // 分流/汇流器
+        beltDevices.forEach(d => {
+            if (d.x >= x1 && d.x <= x2 && d.y >= y1 && d.y <= y2) {
+                selectedBeltDeviceIds.add(d.id);
+            }
+        });
+        pipeDevices.forEach(d => {
+            if (d.x >= x1 && d.x <= x2 && d.y >= y1 && d.y <= y2) {
+                selectedPipeDeviceIds.add(d.id);
+            }
+        });
+
+        // 传送带格点
+        beltPaths.forEach(path => {
+            path.points.forEach((p, idx) => {
+                if (p.x >= x1 && p.x <= x2 && p.y >= y1 && p.y <= y2) {
+                    let set = selectedBeltPointIndicesByPath.get(path.id);
+                    if (!set) {
+                        set = new Set();
+                        selectedBeltPointIndicesByPath.set(path.id, set);
+                    }
+                    set.add(idx);
+                }
+            });
+        });
+
+        // 水管格点
+        pipePaths.forEach(path => {
+            path.points.forEach((p, idx) => {
+                if (p.x >= x1 && p.x <= x2 && p.y >= y1 && p.y <= y2) {
+                    let set = selectedPipePointIndicesByPath.get(path.id);
+                    if (!set) {
+                        set = new Set();
+                        selectedPipePointIndicesByPath.set(path.id, set);
+                    }
+                    set.add(idx);
+                }
+            });
+        });
+
+        multiSelectRect.active = false;
+        multiSelecting = false;
+        multiMouseDown.isDown = false;
+    }
+
+    function hasAnyMultiSelection() {
+        if (selectedMachineIds.size > 0) return true;
+        if (selectedBeltDeviceIds.size > 0) return true;
+        if (selectedPipeDeviceIds.size > 0) return true;
+        if (selectedBeltPointIndicesByPath.size > 0) return true;
+        if (selectedPipePointIndicesByPath.size > 0) return true;
+        return false;
+    }
+
+    function computeSelectionBoundsFromSnapshot(snapshot) {
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        snapshot.machines.forEach(m => {
+            minX = Math.min(minX, m.x);
+            minY = Math.min(minY, m.y);
+            maxX = Math.max(maxX, m.x + m.w - 1);
+            maxY = Math.max(maxY, m.y + m.h - 1);
+        });
+        snapshot.beltDevices.forEach(d => {
+            minX = Math.min(minX, d.x);
+            minY = Math.min(minY, d.y);
+            maxX = Math.max(maxX, d.x);
+            maxY = Math.max(maxY, d.y);
+        });
+        snapshot.pipeDevices.forEach(d => {
+            minX = Math.min(minX, d.x);
+            minY = Math.min(minY, d.y);
+            maxX = Math.max(maxX, d.x);
+            maxY = Math.max(maxY, d.y);
+        });
+        snapshot.beltSegments.forEach(seg => {
+            seg.forEach(p => {
+                minX = Math.min(minX, p.x);
+                minY = Math.min(minY, p.y);
+                maxX = Math.max(maxX, p.x);
+                maxY = Math.max(maxY, p.y);
+            });
+        });
+        snapshot.pipeSegments.forEach(seg => {
+            seg.forEach(p => {
+                minX = Math.min(minX, p.x);
+                minY = Math.min(minY, p.y);
+                maxX = Math.max(maxX, p.x);
+                maxY = Math.max(maxY, p.y);
+            });
+        });
+        if (!isFinite(minX)) {
+            minX = 0; maxX = -1; minY = 0; maxY = -1;
+        }
+        return { minX, maxX, minY, maxY };
+    }
+
+    function isCellFreeForBeltDevice(nx, ny, excludeDeviceId = null) {
+        if (nx < 0 || nx >= GRID_SIZE || ny < 0 || ny >= GRID_SIZE) return false;
+        const cell = grid[ny][nx];
+        if (cell.machineId !== null) return false;
+        if (cell.beltDeviceId !== null && cell.beltDeviceId !== excludeDeviceId) return false;
+        if (cell.pipeDeviceId !== null) return false;
+        return true;
+    }
+
+    function isCellFreeForPipeDevice(nx, ny, excludeDeviceId = null) {
+        if (nx < 0 || nx >= GRID_SIZE || ny < 0 || ny >= GRID_SIZE) return false;
+        const cell = grid[ny][nx];
+        if (cell.machineId !== null) return false;
+        if (cell.pipeDeviceId !== null && cell.pipeDeviceId !== excludeDeviceId) return false;
+        if (cell.beltDeviceId !== null) return false;
+        return true;
+    }
+
+    function isMultiPlacementValid() {
+        if (!multiMoveState.moving || !multiSelectionSnapshot) return false;
+        const dx = multiMoveState.deltaX;
+        const dy = multiMoveState.deltaY;
+
+        // 普通机器
+        for (const m of multiSelectionSnapshot.machines) {
+            const nx = m.x + dx;
+            const ny = m.y + dy;
+            if (!isAreaFree(nx, ny, m.w, m.h, null, m.direction, null, null)) return false;
+        }
+
+        // 分流/汇流器
+        for (const d of multiSelectionSnapshot.beltDevices) {
+            const nx = d.x + dx;
+            const ny = d.y + dy;
+            if (!isCellFreeForBeltDevice(nx, ny, d.id)) return false;
+        }
+        for (const d of multiSelectionSnapshot.pipeDevices) {
+            const nx = d.x + dx;
+            const ny = d.y + dy;
+            if (!isCellFreeForPipeDevice(nx, ny, d.id)) return false;
+        }
+
+        // 传送带段
+        for (const seg of multiSelectionSnapshot.beltSegments) {
+            const moved = seg.map(p => ({ x: p.x + dx, y: p.y + dy }));
+            if (!isBeltPathValid(moved, [])) return false;
+        }
+        // 水管段
+        for (const seg of multiSelectionSnapshot.pipeSegments) {
+            const moved = seg.map(p => ({ x: p.x + dx, y: p.y + dy }));
+            if (!isPipePathValid(moved, [])) return false;
+        }
+        return true;
+    }
+
+    function drawMultiSelectionPreview() {
+        if (!multiMoveState.moving || !multiSelectionSnapshot) return;
+        const valid = isMultiPlacementValid();
+        const dx = multiMoveState.deltaX;
+        const dy = multiMoveState.deltaY;
+
+        ctx.save();
+
+        // 机器预览
+        multiSelectionSnapshot.machines.forEach(m => {
+            const nx = m.x + dx;
+            const ny = m.y + dy;
+            const colorFill = valid ? 'rgba(0, 200, 255, 0.35)' : 'rgba(255, 80, 80, 0.45)';
+            const colorStroke = valid ? '#00ccff' : '#ff6666';
+            ctx.fillStyle = colorFill;
+            ctx.fillRect(nx * CELL_SIZE, ny * CELL_SIZE, m.w * CELL_SIZE, m.h * CELL_SIZE);
+            ctx.strokeStyle = colorStroke;
+            ctx.lineWidth = 3;
+            ctx.strokeRect(nx * CELL_SIZE, ny * CELL_SIZE, m.w * CELL_SIZE, m.h * CELL_SIZE);
+            drawMachineContent(nx, ny, m.w, m.h, m.name, m.direction);
+        });
+
+        // 分流/汇流器预览
+        multiSelectionSnapshot.beltDevices.forEach(d => {
+            const nx = d.x + dx;
+            const ny = d.y + dy;
+            const colorFill = valid ? 'rgba(0, 200, 255, 0.35)' : 'rgba(255, 80, 80, 0.45)';
+            const colorStroke = valid ? '#00ccff' : '#ff6666';
+            ctx.fillStyle = colorFill;
+            ctx.fillRect(nx * CELL_SIZE, ny * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+            ctx.strokeStyle = colorStroke;
+            ctx.lineWidth = 3;
+            ctx.strokeRect(nx * CELL_SIZE, ny * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+            drawBeltDevice({ x: nx, y: ny, name: d.name, direction: d.direction });
+        });
+        multiSelectionSnapshot.pipeDevices.forEach(d => {
+            const nx = d.x + dx;
+            const ny = d.y + dy;
+            const colorFill = valid ? 'rgba(0, 200, 255, 0.35)' : 'rgba(255, 80, 80, 0.45)';
+            const colorStroke = valid ? '#00ccff' : '#ff6666';
+            ctx.fillStyle = colorFill;
+            ctx.fillRect(nx * CELL_SIZE, ny * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+            ctx.strokeStyle = colorStroke;
+            ctx.lineWidth = 3;
+            ctx.strokeRect(nx * CELL_SIZE, ny * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+            drawPipeDevice({ x: nx, y: ny, name: d.name, direction: d.direction });
+        });
+
+        // 传送带段预览
+        if (multiSelectionSnapshot.beltSegments.length > 0) {
+            ctx.lineJoin = 'round';
+            ctx.lineCap = 'butt';
+            ctx.strokeStyle = valid ? 'rgba(0, 255, 0, 0.4)' : 'rgba(255, 0, 0, 0.4)';
+            ctx.lineWidth = CELL_SIZE - 6;
+            multiSelectionSnapshot.beltSegments.forEach(seg => {
+                if (seg.length < 2) return;
+                ctx.beginPath();
+                ctx.moveTo((seg[0].x + dx) * CELL_SIZE + CELL_SIZE/2, (seg[0].y + dy) * CELL_SIZE + CELL_SIZE/2);
+                for (let i = 1; i < seg.length; i++) {
+                    ctx.lineTo((seg[i].x + dx) * CELL_SIZE + CELL_SIZE/2, (seg[i].y + dy) * CELL_SIZE + CELL_SIZE/2);
+                }
+                ctx.stroke();
+            });
+        }
+
+        // 水管段预览
+        if (multiSelectionSnapshot.pipeSegments.length > 0) {
+            ctx.lineJoin = 'round';
+            ctx.lineCap = 'butt';
+            ctx.strokeStyle = valid ? 'rgba(0, 255, 0, 0.4)' : 'rgba(255, 0, 0, 0.4)';
+            ctx.lineWidth = CELL_SIZE * 0.28;
+            multiSelectionSnapshot.pipeSegments.forEach(seg => {
+                if (seg.length < 2) return;
+                ctx.beginPath();
+                ctx.moveTo((seg[0].x + dx) * CELL_SIZE + CELL_SIZE/2, (seg[0].y + dy) * CELL_SIZE + CELL_SIZE/2);
+                for (let i = 1; i < seg.length; i++) {
+                    ctx.lineTo((seg[i].x + dx) * CELL_SIZE + CELL_SIZE/2, (seg[i].y + dy) * CELL_SIZE + CELL_SIZE/2);
+                }
+                ctx.stroke();
+            });
+        }
+
+        // 整体包围框
+        const bounds = computeSelectionBoundsFromSnapshot(multiSelectionSnapshot);
+        if (bounds.maxX >= bounds.minX && bounds.maxY >= bounds.minY) {
+            const bx = (bounds.minX + multiMoveState.deltaX) * CELL_SIZE;
+            const by = (bounds.minY + multiMoveState.deltaY) * CELL_SIZE;
+            const bw = (bounds.maxX - bounds.minX + 1) * CELL_SIZE;
+            const bh = (bounds.maxY - bounds.minY + 1) * CELL_SIZE;
+            ctx.strokeStyle = valid ? '#00ff88' : '#ff5555';
+            ctx.setLineDash([6, 4]);
+            ctx.lineWidth = 2;
+            ctx.strokeRect(bx, by, bw, bh);
+        }
+
+        ctx.restore();
+    }
+
+
     function deactivatePlacement() {
         placementActive = false;
         preview.active = false;
         updateUI();
+    }
+
+    function toggleMultiSelectMode() {
+        multiSelectMode = !multiSelectMode;
+        if (multiSelectMode) {
+            // 进入多选模式时，关闭其它模式与拖拽
+            placementActive = false;
+            beltMode = false;
+            pipeMode = false;
+            beltStart = null;
+            beltPath = [];
+            extendingBeltId = null;
+            pipeStart = null;
+            pipePath = [];
+            extendingPipeId = null;
+            dragState.dragging = false;
+            potentialDrag = null;
+            pickedUpMachine = null;
+            pickedUpBeltDevice = null;
+            pickedUpPipeDevice = null;
+            multiMoveState.moving = false;
+            multiSelectRect.active = false;
+            multiMouseDown.isDown = false;
+        } else {
+            // 退出多选模式时，清空选择与移动状态
+            clearMultiSelection();
+            multiMoveState.moving = false;
+            multiSelectRect.active = false;
+            multiMouseDown.isDown = false;
+        }
+        updateUI();
+        draw();
+    }
+
+    function startMultiMove() {
+        if (!multiSelectMode || multiMoveState.moving) return;
+        if (!hasAnyMultiSelection()) return;
+
+        // 1. 把选中的机器、分流/汇流器从全局数组中取出，同时生成快照
+        const snapshotMachines = [];
+        machines = machines.filter(m => {
+            if (selectedMachineIds.has(m.id)) {
+                snapshotMachines.push({ ...m });
+                return false;
+            }
+            return true;
+        });
+
+        const snapshotBeltDevices = [];
+        beltDevices = beltDevices.filter(d => {
+            if (selectedBeltDeviceIds.has(d.id)) {
+                snapshotBeltDevices.push({ ...d });
+                return false;
+            }
+            return true;
+        });
+
+        const snapshotPipeDevices = [];
+        pipeDevices = pipeDevices.filter(d => {
+            if (selectedPipeDeviceIds.has(d.id)) {
+                snapshotPipeDevices.push({ ...d });
+                return false;
+            }
+            return true;
+        });
+
+        // 2. 处理传送带：把选中的格点从原路径中剥离出来，拆成多段
+        const snapshotBeltSegments = [];
+        const newBeltPaths = [];
+        beltPaths.forEach(path => {
+            const selSet = selectedBeltPointIndicesByPath.get(path.id);
+            if (!selSet || selSet.size === 0) {
+                newBeltPaths.push(path);
+                return;
+            }
+            const isRing = path.points.length > 2 &&
+                path.points[0].x === path.points[path.points.length - 1].x &&
+                path.points[0].y === path.points[path.points.length - 1].y;
+            const allSelected = selSet.size >= path.points.length;
+            if (allSelected) {
+                snapshotBeltSegments.push(path.points.map(p => ({ ...p })));
+                // 原路径全部被移动，原处不保留
+                return;
+            }
+            const workPoints = isRing ? path.points.slice(0, -1) : path.points;
+            let remainSeg = [];
+            let moveSeg = [];
+            const remainSegments = [];
+            const moveSegments = [];
+            for (let i = 0; i < workPoints.length; i++) {
+                const p = workPoints[i];
+                const selected = selSet.has(i);
+                if (selected) {
+                    if (remainSeg.length > 0) {
+                        remainSegments.push(remainSeg);
+                        remainSeg = [];
+                    }
+                    moveSeg.push({ ...p });
+                } else {
+                    if (moveSeg.length > 0) {
+                        moveSegments.push(moveSeg);
+                        moveSeg = [];
+                    }
+                    remainSeg.push({ ...p });
+                }
+            }
+            if (remainSeg.length > 0) remainSegments.push(remainSeg);
+            if (moveSeg.length > 0) moveSegments.push(moveSeg);
+
+            // 保留未选中的段
+            remainSegments.forEach(seg => {
+                if (seg.length >= 2) {
+                    newBeltPaths.push({ id: path.id, points: seg });
+                }
+            });
+            // 选中的段加入快照
+            moveSegments.forEach(seg => {
+                if (seg.length >= 2) snapshotBeltSegments.push(seg);
+            });
+        });
+        beltPaths = newBeltPaths;
+
+        // 3. 处理水管，逻辑同上传送带
+        const snapshotPipeSegments = [];
+        const newPipePaths = [];
+        pipePaths.forEach(path => {
+            const selSet = selectedPipePointIndicesByPath.get(path.id);
+            if (!selSet || selSet.size === 0) {
+                newPipePaths.push(path);
+                return;
+            }
+            const isRing = path.points.length > 2 &&
+                path.points[0].x === path.points[path.points.length - 1].x &&
+                path.points[0].y === path.points[path.points.length - 1].y;
+            const allSelected = selSet.size >= path.points.length;
+            if (allSelected) {
+                snapshotPipeSegments.push(path.points.map(p => ({ ...p })));
+                return;
+            }
+            const workPoints = isRing ? path.points.slice(0, -1) : path.points;
+            let remainSeg = [];
+            let moveSeg = [];
+            const remainSegments = [];
+            const moveSegments = [];
+            for (let i = 0; i < workPoints.length; i++) {
+                const p = workPoints[i];
+                const selected = selSet.has(i);
+                if (selected) {
+                    if (remainSeg.length > 0) {
+                        remainSegments.push(remainSeg);
+                        remainSeg = [];
+                    }
+                    moveSeg.push({ ...p });
+                } else {
+                    if (moveSeg.length > 0) {
+                        moveSegments.push(moveSeg);
+                        moveSeg = [];
+                    }
+                    remainSeg.push({ ...p });
+                }
+            }
+            if (remainSeg.length > 0) remainSegments.push(remainSeg);
+            if (moveSeg.length > 0) moveSegments.push(moveSeg);
+
+            remainSegments.forEach(seg => {
+                if (seg.length >= 2) {
+                    newPipePaths.push({ id: path.id, points: seg });
+                }
+            });
+            moveSegments.forEach(seg => {
+                if (seg.length >= 2) snapshotPipeSegments.push(seg);
+            });
+        });
+        pipePaths = newPipePaths;
+
+        rebuildGrid();
+
+        multiSelectionSnapshot = {
+            machines: snapshotMachines,
+            beltDevices: snapshotBeltDevices,
+            pipeDevices: snapshotPipeDevices,
+            beltSegments: snapshotBeltSegments,
+            pipeSegments: snapshotPipeSegments
+        };
+
+        const bounds = computeSelectionBoundsFromSnapshot(multiSelectionSnapshot);
+        multiMoveState.minX = bounds.minX;
+        multiMoveState.maxX = bounds.maxX;
+        multiMoveState.minY = bounds.minY;
+        multiMoveState.maxY = bounds.maxY;
+        multiMoveState.anchorX = (bounds.minX + bounds.maxX) / 2;
+        multiMoveState.anchorY = (bounds.minY + bounds.maxY) / 2;
+        multiMoveState.deltaX = 0;
+        multiMoveState.deltaY = 0;
+        multiMoveState.moving = true;
+
+        // 多选移动开始后，仍然保留多选模式，但清空原选择集，靠快照渲染
+        clearMultiSelection();
+        draw();
+    }
+
+    function finalizeMultiMove() {
+        if (!multiMoveState.moving || !multiSelectionSnapshot) return;
+        if (!isMultiPlacementValid()) return;
+        const dx = multiMoveState.deltaX;
+        const dy = multiMoveState.deltaY;
+
+        // 放下机器
+        multiSelectionSnapshot.machines.forEach(m => {
+            const placed = { ...m, x: m.x + dx, y: m.y + dy, id: nextMachineId++ };
+            machines.push(placed);
+        });
+        // 放下分流/汇流器
+        multiSelectionSnapshot.beltDevices.forEach(d => {
+            const placed = { ...d, x: d.x + dx, y: d.y + dy, id: nextBeltDeviceId++ };
+            beltDevices.push(placed);
+        });
+        multiSelectionSnapshot.pipeDevices.forEach(d => {
+            const placed = { ...d, x: d.x + dx, y: d.y + dy, id: nextPipeDeviceId++ };
+            pipeDevices.push(placed);
+        });
+        // 放下传送带/水管段
+        multiSelectionSnapshot.beltSegments.forEach(seg => {
+            const id = nextBeltId++;
+            const moved = seg.map(p => ({ x: p.x + dx, y: p.y + dy }));
+            beltPaths.push({ id, points: moved });
+        });
+        multiSelectionSnapshot.pipeSegments.forEach(seg => {
+            const id = nextPipeId++;
+            const moved = seg.map(p => ({ x: p.x + dx, y: p.y + dy }));
+            pipePaths.push({ id, points: moved });
+        });
+
+        rebuildGrid();
+
+        // 放置完成后自动退出多选模式
+        multiMoveState.moving = false;
+        multiSelectionSnapshot = null;
+        multiSelectMode = false;
+        clearMultiSelection();
+        updateUI();
+        draw();
     }
 
     function toggleBeltMode() {
@@ -1968,7 +2574,11 @@
     function updateUI() {
         currentMachineSpan.textContent = curName ? `${curName} (${curW}x${curH})` : '未选择';
 
-        if (pipeMode) {
+        if (multiSelectMode) {
+            placementIndicator.innerHTML = '多选模式';
+            placementIndicator.style.background = '#8b5cf6';
+            canvas.style.cursor = multiMoveState.moving ? 'move' : 'crosshair';
+        } else if (pipeMode) {
             placementIndicator.innerHTML = '水管模式';
             placementIndicator.style.background = '#1e90ff';
             canvas.style.cursor = 'cell';   // 水管模式使用单元格光标
@@ -1994,6 +2604,15 @@
             btn.textContent = name;
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
+                // 在菜单上点击机器时，自动退出多选模式
+                if (multiSelectMode) {
+                    multiSelectMode = false;
+                    multiMoveState.moving = false;
+                    multiSelectionSnapshot = null;
+                    multiSelectRect.active = false;
+                    multiMouseDown.isDown = false;
+                    clearMultiSelection();
+                }
                 const [w, h] = size.split('x').map(Number);
                 curW = w; curH = h; curName = name;
                 curDirection = (w > h) ? 1 : (h > w ? 0 : 0);
@@ -2084,6 +2703,29 @@
     canvas.addEventListener('mousemove', (e) => {
         const { ix, iy } = getGridFromEvent(e);
         preview.gridX = ix; preview.gridY = iy; preview.active = true;
+
+        // 多选模式下优先处理框选/批量移动
+        if (multiSelectMode) {
+            if (multiMoveState.moving && multiSelectionSnapshot) {
+                // 让多选包围框中心尽量跟随鼠标所在格点
+                const targetCenterX = ix + 0.5;
+                const targetCenterY = iy + 0.5;
+                multiMoveState.deltaX = Math.round(targetCenterX - multiMoveState.anchorX);
+                multiMoveState.deltaY = Math.round(targetCenterY - multiMoveState.anchorY);
+            } else if (multiMouseDown.isDown) {
+                const manhattan = Math.abs(ix - multiMouseDown.gridX) + Math.abs(iy - multiMouseDown.gridY);
+                if (manhattan >= 1) {
+                    multiSelecting = true;
+                    multiSelectRect.active = true;
+                    multiSelectRect.startX = multiMouseDown.gridX;
+                    multiSelectRect.startY = multiMouseDown.gridY;
+                    multiSelectRect.endX = ix;
+                    multiSelectRect.endY = iy;
+                }
+            }
+            draw();
+            return;
+        }
 
         if (beltMode && beltStart) {
             const last = beltPath[beltPath.length-1];
@@ -2237,6 +2879,22 @@
     canvas.addEventListener('mousedown', (e) => {
         if (e.button !== 0) return;
         const { ix, iy } = getGridFromEvent(e);
+
+        // 多选模式
+        if (multiSelectMode) {
+            e.preventDefault();
+            if (multiMoveState.moving && multiSelectionSnapshot) {
+                finalizeMultiMove();
+                return;
+            }
+            // 记录按下，后续根据是否移动判断是点击还是框选
+            multiMouseDown.isDown = true;
+            multiMouseDown.gridX = ix;
+            multiMouseDown.gridY = iy;
+            multiSelecting = false;
+            multiSelectRect.active = false;
+            return;
+        }
 
         if (beltMode) {
             e.preventDefault();
@@ -2640,6 +3298,28 @@
 
     canvas.addEventListener('mouseup', (e) => {
         if (e.button !== 0) return;
+        const { ix, iy } = getGridFromEvent(e);
+
+        // 多选模式下的点击/框选结束
+        if (multiSelectMode) {
+            if (multiSelecting && multiSelectRect.active) {
+                applySelectionRect();
+                multiSelecting = false;
+                multiMouseDown.isDown = false;
+                draw();
+                return;
+            }
+            // 点击机器进行选中/反选
+            const hit = findMachineIndexAt(ix, iy);
+            if (hit) {
+                const id = hit.machine.id;
+                if (selectedMachineIds.has(id)) selectedMachineIds.delete(id);
+                else selectedMachineIds.add(id);
+                draw();
+            }
+            multiMouseDown.isDown = false;
+            return;
+        }
         if (pickedUpMachine) {
             const { machine, gridX, gridY } = pickedUpMachine;
             if (isAreaFree(gridX, gridY, machine.w, machine.h, machine.id, machine.direction, null, null)) {
@@ -2848,6 +3528,109 @@
 
     window.addEventListener('keydown', (e) => {
         if (e.key === 'z' || e.key === 'Z') { zPressed = true; e.preventDefault(); }
+
+        // 多选模式开关
+        if (e.key === 'x' || e.key === 'X') {
+            e.preventDefault();
+            toggleMultiSelectMode();
+            return;
+        }
+
+        // 多选模式下的专用按键
+        if (multiSelectMode) {
+            if (e.key === 'm' || e.key === 'M') {
+                e.preventDefault();
+                if (!multiMoveState.moving) startMultiMove();
+                return;
+            }
+            if (e.key === 'r' || e.key === 'R') {
+                e.preventDefault();
+                if (multiMoveState.moving && multiSelectionSnapshot) {
+                    // 整个多选矩形绕中心顺时针旋转 90°
+                    const centerX = multiMoveState.anchorX + multiMoveState.deltaX;
+                    const centerY = multiMoveState.anchorY + multiMoveState.deltaY;
+                    const dx = multiMoveState.deltaX;
+                    const dy = multiMoveState.deltaY;
+
+                    function rotatePoint(px, py) {
+                        const x = px + dx;
+                        const y = py + dy;
+                        const rx = Math.round(centerX - (y - centerY));
+                        const ry = Math.round(centerY + (x - centerX));
+                        return { x: rx, y: ry };
+                    }
+
+                    // 旋转机器（按占用格子整体旋转）
+                    multiSelectionSnapshot.machines.forEach(m => {
+                        const cells = [];
+                        for (let oy = 0; oy < m.h; oy++) {
+                            for (let ox = 0; ox < m.w; ox++) {
+                                cells.push(rotatePoint(m.x + ox, m.y + oy));
+                            }
+                        }
+                        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                        cells.forEach(c => {
+                            minX = Math.min(minX, c.x);
+                            maxX = Math.max(maxX, c.x);
+                            minY = Math.min(minY, c.y);
+                            maxY = Math.max(maxY, c.y);
+                        });
+                        if (!isFinite(minX)) return;
+                        m.x = minX;
+                        m.y = minY;
+                        m.w = maxX - minX + 1;
+                        m.h = maxY - minY + 1;
+                        m.direction = (m.direction + 1) % 4;
+                    });
+
+                    // 旋转分流/汇流器
+                    multiSelectionSnapshot.beltDevices.forEach(d => {
+                        const rotated = rotatePoint(d.x, d.y);
+                        d.x = rotated.x;
+                        d.y = rotated.y;
+                        d.direction = (d.direction + 1) % 4;
+                    });
+                    multiSelectionSnapshot.pipeDevices.forEach(d => {
+                        const rotated = rotatePoint(d.x, d.y);
+                        d.x = rotated.x;
+                        d.y = rotated.y;
+                        d.direction = (d.direction + 1) % 4;
+                    });
+
+                    // 旋转传送带/水管点
+                    multiSelectionSnapshot.beltSegments.forEach(seg => {
+                        seg.forEach(p => {
+                            const rotated = rotatePoint(p.x, p.y);
+                            p.x = rotated.x;
+                            p.y = rotated.y;
+                        });
+                    });
+                    multiSelectionSnapshot.pipeSegments.forEach(seg => {
+                        seg.forEach(p => {
+                            const rotated = rotatePoint(p.x, p.y);
+                            p.x = rotated.x;
+                            p.y = rotated.y;
+                        });
+                    });
+
+                    // 旋转后重新计算包围框和锚点，并清零位移
+                    const bounds = computeSelectionBoundsFromSnapshot(multiSelectionSnapshot);
+                    multiMoveState.minX = bounds.minX;
+                    multiMoveState.maxX = bounds.maxX;
+                    multiMoveState.minY = bounds.minY;
+                    multiMoveState.maxY = bounds.maxY;
+                    multiMoveState.anchorX = (bounds.minX + bounds.maxX) / 2;
+                    multiMoveState.anchorY = (bounds.minY + bounds.maxY) / 2;
+                    multiMoveState.deltaX = 0;
+                    multiMoveState.deltaY = 0;
+                    draw();
+                }
+                return;
+            }
+            // 多选模式下其余快捷键（E/Q/R的普通逻辑）不再生效
+            return;
+        }
+
         if (e.key === 'r' || e.key === 'R') {
             e.preventDefault();
             if (pickedUpBeltDevice) {
