@@ -146,6 +146,13 @@
             border-radius: 30px;
             color: #154759;
         }
+        #zoomLabel {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 72px;
+            text-align: center;
+        }
         .scrollable-canvas {
             flex: 1 1 auto;
             overflow: auto;
@@ -161,8 +168,8 @@
         }
         canvas {
             display: block;
-            width: 1350px;
-            height: 1350px;
+            width: 2400px;
+            height: 2400px;
             border-radius: 12px;
             background-color: #568296;
             box-shadow: 0 0 0 1px #8eb2c2, 0 8px 16px rgba(0,20,30,0.2);
@@ -240,7 +247,6 @@
             <button class="btn rotate-btn" id="rotateBtn" title="旋转当前尺寸 (或按R)">旋转(R)</button>
             <button class="btn clear-btn" id="clearBtn" title="移除所有机器和传送带">清空</button>
         </div>
-        <span class="placement-indicator" id="placementIndicator">待放置</span>
 
         <div id="menu2x2" class="machine-menu" style="top: 100px; left: 20px;"></div>
         <div id="menu3x3" class="machine-menu" style="top: 100px; left: 20px;"></div>
@@ -254,12 +260,19 @@
         <div class="info-item">机器数量 <span class="coord" id="machineCount">0</span></div>
         <div class="info-item">传送带路径 <span class="coord" id="beltLength">0</span></div>
         <div class="info-item">按住Z连续放置 | 双击机器拾起 | 右键删除</div>
+        <div class="btn-group">
+            <button class="btn" id="zoomOutBtn" title="缩小视图">-</button>
+            <span class="coord" id="zoomLabel">100%</span>
+            <button class="btn" id="zoomInBtn" title="放大视图">+</button>
+            <button class="btn" id="zoomResetBtn" title="重置缩放为 100%">重置</button>
+        </div>
+        <span class="placement-indicator" id="placementIndicator">待放置</span>
     </div>
 </div>
 
 <div class="scrollable-canvas">
     <div class="canvas-wrapper">
-        <canvas id="gridCanvas" width="1350" height="1350"></canvas>
+        <canvas id="gridCanvas" width="2400" height="2400"></canvas>
     </div>
 </div>
 
@@ -269,7 +282,7 @@
     const canvas = document.getElementById('gridCanvas');
     const ctx = canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
-    const logicalWidth = 1350, logicalHeight = 1350;
+    const logicalWidth = 1800, logicalHeight = 1800;
     canvas.width = logicalWidth * dpr;
     canvas.height = logicalHeight * dpr;
     canvas.style.width = logicalWidth + 'px';
@@ -277,8 +290,14 @@
     ctx.scale(dpr, dpr);
 
     // ---------- 常量 ----------
-    const GRID_SIZE = 45;
+    const GRID_SIZE = 60;
     const CELL_SIZE = 30;          // 逻辑像素
+
+    // 视图缩放
+    let zoom = 1;
+    const MIN_ZOOM = 0.5;
+    const MAX_ZOOM = 3;
+    const ZOOM_STEP = 0.25;
 
     // 机器定义 (原有)
     const machineTypes = {
@@ -365,16 +384,23 @@
     const pipeMergerBtn = document.getElementById('pipeMergerBtn');
     const rotateBtn = document.getElementById('rotateBtn');
     const clearBtn = document.getElementById('clearBtn');
+    const zoomInBtn = document.getElementById('zoomInBtn');
+    const zoomOutBtn = document.getElementById('zoomOutBtn');
+    const zoomResetBtn = document.getElementById('zoomResetBtn');
     const currentMachineSpan = document.getElementById('currentMachineLabel');
     const mouseCoordSpan = document.getElementById('mouseCoord');
     const machineCountSpan = document.getElementById('machineCount');
     const beltLengthSpan = document.getElementById('beltLength');
     const placementIndicator = document.getElementById('placementIndicator');
+    const zoomLabel = document.getElementById('zoomLabel');
 
     const menu2x2 = document.getElementById('menu2x2');
     const menu3x3 = document.getElementById('menu3x3');
     const menu5x5 = document.getElementById('menu5x5');
     const menu4x6 = document.getElementById('menu4x6');
+
+    const scrollableCanvas = document.querySelector('.scrollable-canvas');
+    const canvasWrapper = document.querySelector('.canvas-wrapper');
 
     // 辅助函数：判断是否为分流器/汇流器
     function isSplitterOrMerger(name) {
@@ -1807,11 +1833,55 @@
         else mouseCoordSpan.textContent = '— , —';
     }
 
+    // ---------- 视图缩放 ----------
+    function updateZoomLabel() {
+        if (!zoomLabel) return;
+        zoomLabel.textContent = Math.round(zoom * 100) + '%';
+    }
+
+    function applyZoom(oldZoom) {
+        // 更新画布的 CSS 尺寸，仅影响显示大小，不改变逻辑坐标
+        canvas.style.width = (logicalWidth * zoom) + 'px';
+        canvas.style.height = (logicalHeight * zoom) + 'px';
+
+        if (scrollableCanvas && oldZoom && oldZoom !== zoom) {
+            const viewportWidth = scrollableCanvas.clientWidth;
+            const viewportHeight = scrollableCanvas.clientHeight;
+
+            if (viewportWidth > 0 && viewportHeight > 0) {
+                const scrollLeft = scrollableCanvas.scrollLeft;
+                const scrollTop = scrollableCanvas.scrollTop;
+
+                // 以当前视口中心为基准，保持逻辑位置不变
+                const centerX = (scrollLeft + viewportWidth / 2) / oldZoom;
+                const centerY = (scrollTop + viewportHeight / 2) / oldZoom;
+
+                const newScrollLeft = centerX * zoom - viewportWidth / 2;
+                const newScrollTop = centerY * zoom - viewportHeight / 2;
+
+                scrollableCanvas.scrollLeft = Math.max(0, newScrollLeft);
+                scrollableCanvas.scrollTop = Math.max(0, newScrollTop);
+            }
+        }
+
+        updateZoomLabel();
+    }
+
+    function setZoom(newZoom) {
+        const clamped = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, newZoom));
+        if (clamped === zoom) return;
+        const oldZoom = zoom;
+        zoom = clamped;
+        applyZoom(oldZoom);
+        draw();
+    }
+
     // ---------- 事件处理 ----------
     function getGridFromEvent(e) {
         const rect = canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
+        // rect 尺寸已包含缩放，需要还原成逻辑坐标
+        const x = (e.clientX - rect.left) / zoom;
+        const y = (e.clientY - rect.top) / zoom;
         const ix = Math.min(GRID_SIZE-1, Math.max(0, Math.floor(x / CELL_SIZE)));
         const iy = Math.min(GRID_SIZE-1, Math.max(0, Math.floor(y / CELL_SIZE)));
         return { ix, iy };
@@ -2046,7 +2116,7 @@
 
         if (potentialDrag) {
             const { startX, startY, machineIdx, offsetX, offsetY, originalMachine } = potentialDrag;
-            if (Math.abs(ix - startX) + Math.abs(iy - startY) >= 2) {
+            if (Math.abs(ix - startX) + Math.abs(iy - startY) >= 1) {
                 machines.splice(machineIdx, 1);
                 rebuildGrid();
                 dragState.dragging = true;
@@ -2834,12 +2904,36 @@
         updateUI(); draw();
     });
 
+    // 缩放按钮事件
+    if (zoomInBtn) {
+        zoomInBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            setZoom(zoom + ZOOM_STEP);
+        });
+    }
+    if (zoomOutBtn) {
+        zoomOutBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            setZoom(zoom - ZOOM_STEP);
+        });
+    }
+    if (zoomResetBtn) {
+        zoomResetBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const oldZoom = zoom;
+            zoom = 1;
+            applyZoom(oldZoom);
+            draw();
+        });
+    }
+
     function init() {
         curW = 2; curH = 2; curName = '供电桩';
         curDirection = 0;
         placementActive = false;
         rebuildGrid();
         updateUI();
+        applyZoom(zoom);
         draw();
     }
     init();
