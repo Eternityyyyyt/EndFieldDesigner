@@ -2087,23 +2087,50 @@
 
         if (beltMode && beltStart) {
             const last = beltPath[beltPath.length-1];
-            if (last && (last.x !== ix || last.y !== iy) && Math.abs(last.x - ix) + Math.abs(last.y - iy) === 1) {
-                if (beltPath.length >= 2) {
-                    const secondLast = beltPath[beltPath.length-2];
-                    if (secondLast.x === ix && secondLast.y === iy) beltPath.pop();
-                    else {
+            if (last && (last.x !== ix || last.y !== iy)) {
+                // 1. 如果移动回到本次放置路径上的某个已有格子，视为多格回退
+                const existingIndex = beltPath.findIndex((p, idx) => p.x === ix && p.y === iy);
+                if (existingIndex !== -1 && existingIndex < beltPath.length - 1) {
+                    // 回退到该格子（包含该格子）
+                    beltPath = beltPath.slice(0, existingIndex + 1);
+                    beltLengthSpan.textContent = beltPath.length;
+                } else {
+                    const dx = ix - last.x;
+                    const dy = iy - last.y;
+                    const manhattan = Math.abs(dx) + Math.abs(dy);
+
+                    // 相邻一格的精细控制（仅向前扩展，不再做单步回退，回退统一走上面的多格逻辑）
+                    if (manhattan === 1) {
                         const machine = getMachineAt(ix, iy);
                         if (machine) {
                             if (isMachineInputCell(machine, ix, iy)) beltPath.push({ x: ix, y: iy });
                         } else beltPath.push({ x: ix, y: iy });
+                        beltLengthSpan.textContent = beltPath.length;
                     }
-                } else {
-                    const machine = getMachineAt(ix, iy);
-                    if (machine) {
-                        if (isMachineInputCell(machine, ix, iy)) beltPath.push({ x: ix, y: iy });
-                    } else beltPath.push({ x: ix, y: iy });
+                    // 鼠标移动距离较长，自动按直线补全中间路径（仅支持横/竖直线）
+                    else if (manhattan > 1 && (dx === 0 || dy === 0)) {
+                        const stepX = dx === 0 ? 0 : (dx > 0 ? 1 : -1);
+                        const stepY = dy === 0 ? 0 : (dy > 0 ? 1 : -1);
+                        let curX = last.x;
+                        let curY = last.y;
+                        for (let s = 1; s <= manhattan; s++) {
+                            curX += stepX;
+                            curY += stepY;
+                            const machine = getMachineAt(curX, curY);
+                            const isLastStep = (s === manhattan);
+                            if (machine) {
+                                // 只允许在终点进入机器输入格，中途遇到机器则直接停止
+                                if (isLastStep && isMachineInputCell(machine, curX, curY)) {
+                                    beltPath.push({ x: curX, y: curY });
+                                }
+                                break;
+                            } else {
+                                beltPath.push({ x: curX, y: curY });
+                            }
+                        }
+                        beltLengthSpan.textContent = beltPath.length;
+                    }
                 }
-                beltLengthSpan.textContent = beltPath.length;
             }
         }
 
