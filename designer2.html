@@ -256,7 +256,7 @@
     <div class="info-bar">
         <div class="info-item">当前机器 <span class="badge" id="currentMachineLabel">未选择</span></div>
         <div class="info-item">鼠标格点 <span class="coord" id="mouseCoord">0 , 0</span></div>
-        <div class="info-item">按住Z连续放置 | 双击机器拾起 | 右键删除</div>
+        <div class="info-item">按住Z连续放置 | 双击机器拾起 | 右键删除 | 按X多选</div>
         <div class="btn-group">
             <button class="btn" id="zoomOutBtn" title="缩小视图">-</button>
             <span class="coord" id="zoomLabel">100%</span>
@@ -2585,7 +2585,7 @@
         } else if (beltMode) {
             placementIndicator.innerHTML = '传送带模式';
             placementIndicator.style.background = '#3e6f8a';
-            canvas.style.cursor = 'crosshair';        // 传送带模式使用 十字准星光标
+            canvas.style.cursor = 'cell';        // 传送带模式使用 单元格光标
         } else if (placementActive) {
             placementIndicator.innerHTML = '放置模式';
             placementIndicator.style.background = '#3e9f5a';
