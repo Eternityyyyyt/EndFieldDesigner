@@ -247,7 +247,6 @@
             <button class="btn rotate-btn" id="rotateBtn" title="旋转当前尺寸 (或按R)">旋转(R)</button>
             <button class="btn clear-btn" id="clearBtn" title="移除所有机器和传送带">清空</button>
         </div>
-        <span class="placement-indicator" id="placementIndicator">待放置</span>
         <div id="menu2x2" class="machine-menu" style="top: 100px; left: 20px;"></div>
         <div id="menu3x3" class="machine-menu" style="top: 100px; left: 20px;"></div>
         <div id="menu5x5" class="machine-menu" style="top: 100px; left: 20px;"></div>
@@ -257,9 +256,6 @@
     <div class="info-bar">
         <div class="info-item">当前机器 <span class="badge" id="currentMachineLabel">未选择</span></div>
         <div class="info-item">鼠标格点 <span class="coord" id="mouseCoord">0 , 0</span></div>
-        <div class="info-item">机器数量 <span class="coord" id="machineCount">0</span></div>
-        <div class="info-item">传送带路径 <span class="coord" id="beltLength">0</span></div>
-        <div class="info-item">缩放 <span class="coord" id="zoomLabel">100%</span></div>
         <div class="info-item">按住Z连续放置 | 双击机器拾起 | 右键删除</div>
         <div class="btn-group">
             <button class="btn" id="zoomOutBtn" title="缩小视图">-</button>
@@ -390,8 +386,6 @@
     const zoomResetBtn = document.getElementById('zoomResetBtn');
     const currentMachineSpan = document.getElementById('currentMachineLabel');
     const mouseCoordSpan = document.getElementById('mouseCoord');
-    const machineCountSpan = document.getElementById('machineCount');
-    const beltLengthSpan = document.getElementById('beltLength');
     const placementIndicator = document.getElementById('placementIndicator');
     const zoomLabel = document.getElementById('zoomLabel');
 
@@ -1973,8 +1967,6 @@
 
     function updateUI() {
         currentMachineSpan.textContent = curName ? `${curName} (${curW}x${curH})` : '未选择';
-        machineCountSpan.textContent = machines.length;  // 不统计 beltDevices
-        beltLengthSpan.textContent = beltPath.length;
 
         if (pipeMode) {
             placementIndicator.innerHTML = '水管模式';
