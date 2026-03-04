@@ -1739,12 +1739,30 @@
         ctx.lineJoin = 'round';
         ctx.lineCap = 'butt';
         if (pipePath.length >= 2) {
+            const end = pipePath[pipePath.length - 1];
+            const machineAtEndForBase = getMachineAt(end.x, end.y);
+            let baseEndExtendId = null;
+            if (!machineAtEndForBase && grid[end.y][end.x].pipeIds.length > 0) {
+                const ids = grid[end.y][end.x].pipeIds;
+                if (ids.length === 1) {
+                    const pathId = ids[0];
+                    const path = pipePaths.find(p => p.id === pathId);
+                    if (path) {
+                        const isRing = path.points.length >= 2 &&
+                            path.points[0].x === path.points[path.points.length - 1].x &&
+                            path.points[0].y === path.points[path.points.length - 1].y;
+                        const idx = path.points.findIndex(p => p.x === end.x && p.y === end.y);
+                        if (idx === 0 && !isRing) baseEndExtendId = pathId;
+                    }
+                }
+            }
+            const baseIgnoreIds = [extendingPipeId, baseEndExtendId].filter(id => id !== null);
             ctx.beginPath();
             ctx.moveTo(pipePath[0].x * CELL_SIZE + CELL_SIZE/2, pipePath[0].y * CELL_SIZE + CELL_SIZE/2);
             for (let i = 1; i < pipePath.length; i++) {
                 ctx.lineTo(pipePath[i].x * CELL_SIZE + CELL_SIZE/2, pipePath[i].y * CELL_SIZE + CELL_SIZE/2);
             }
-            const valid = isPipePathValid(pipePath, [extendingPipeId].filter(id => id !== null));
+            const valid = isPipePathValid(pipePath, baseIgnoreIds);
             ctx.strokeStyle = valid ? 'rgba(0, 255, 0, 0.4)' : 'rgba(255, 0, 0, 0.4)';
             ctx.lineWidth =  CELL_SIZE * 0.28;
             ctx.stroke();
@@ -1757,7 +1775,24 @@
             const mx = preview.gridX, my = preview.gridY;
             const last = pipePath[pipePath.length - 1];
             if ((last.x !== mx || last.y !== my) && Math.abs(last.x - mx) + Math.abs(last.y - my) === 1) {
-                const finalValid = isPipePathValid(pipePath.concat([{ x: mx, y: my }]), []);
+                const machineAtEnd = getMachineAt(mx, my);
+                let endExtendId = null;
+                if (!machineAtEnd && grid[my][mx].pipeIds.length > 0) {
+                    const ids = grid[my][mx].pipeIds;
+                    if (ids.length === 1) {
+                        const pathId = ids[0];
+                        const path = pipePaths.find(p => p.id === pathId);
+                        if (path) {
+                            const isRing = path.points.length >= 2 &&
+                                path.points[0].x === path.points[path.points.length - 1].x &&
+                                path.points[0].y === path.points[path.points.length - 1].y;
+                            const idx = path.points.findIndex(p => p.x === mx && p.y === my);
+                            if (idx === 0 && !isRing) endExtendId = pathId;
+                        }
+                    }
+                }
+                const ignoreIds = [extendingPipeId, endExtendId].filter(id => id !== null);
+                const finalValid = isPipePathValid(pipePath.concat([{ x: mx, y: my }]), ignoreIds);
                 ctx.beginPath();
                 ctx.moveTo(last.x * CELL_SIZE + CELL_SIZE/2, last.y * CELL_SIZE + CELL_SIZE/2);
                 ctx.lineTo(mx * CELL_SIZE + CELL_SIZE/2, my * CELL_SIZE + CELL_SIZE/2);
